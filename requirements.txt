@@ -1,0 +1,29 @@
+# 核心框架
+aiogram>=3.4.0,<4.0.0
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# 异步数据库
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# 异步任务队列 (使用 arq 替代 Celery)
+arq>=0.26.0
+redis>=5.0.0
+
+# 搜索
+meilisearch>=0.28.0
+
+# 配置与环境
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# 工具库
+aiohttp>=3.9.0
+aiofiles>=23.2.0
+httpx>=0.26.0
+cryptography>=42.0.0
+python-magic>=0.4.27
+chardet>=5.2.0

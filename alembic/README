@@ -1,0 +1,7 @@
+搜书神器 V2 - 数据库迁移目录
+
+使用说明:
+1. 生成迁移: alembic revision --autogenerate -m "描述"
+2. 执行迁移: alembic upgrade head
+3. 回滚迁移: alembic downgrade -1
+4. 查看历史: alembic history
