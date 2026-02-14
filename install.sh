@@ -102,9 +102,38 @@ apt-get install -y -qq \
 # 安装 Python 3.11 (如果系统没有)
 if ! command -v python3.11 &> /dev/null; then
     info "安装 Python 3.11..."
-    add-apt-repository -y ppa:deadsnakes/ppa 2>&1 > /dev/null
-    apt-get update -qq
-    apt-get install -y -qq python3.11 python3.11-venv python3.11-dev
+    
+    # 确保 add-apt-repository 可用
+    if ! command -v add-apt-repository &> /dev/null; then
+        apt-get install -y -qq software-properties-common
+    fi
+
+    # 检测系统类型，Debian 需要特殊处理
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        if [[ "$ID" == "debian" ]]; then
+            # Debian 11/12 使用 sury 源安装 Python 3.11 (deadsnakes PPA 是 Ubuntu 专用)
+            info "检测到 Debian 系统，使用 sury.org 源安装 Python..."
+            apt-get install -y -qq lsb-release ca-certificates curl
+            curl -sSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg
+            echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/sury-php.list
+            apt-get update -qq
+            # Debian 下通常包名可能不同，尝试通用安装
+            apt-get install -y -qq python3.11 python3.11-venv python3.11-dev || {
+                 warn "从源安装 Python 3.11 失败，尝试编译安装或使用默认 Python 3..."
+            }
+        else
+            # Ubuntu/其他系统尝试 PPA
+            add-apt-repository -y ppa:deadsnakes/ppa 2>&1 > /dev/null
+            apt-get update -qq
+            apt-get install -y -qq python3.11 python3.11-venv python3.11-dev
+        fi
+    else
+        # 无法识别系统，尝试默认 PPA
+        add-apt-repository -y ppa:deadsnakes/ppa 2>&1 > /dev/null
+        apt-get update -qq
+        apt-get install -y -qq python3.11 python3.11-venv python3.11-dev
+    fi
 fi
 
 success "系统依赖安装完成"
