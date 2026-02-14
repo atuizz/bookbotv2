@@ -182,16 +182,23 @@ fi
 # 1.5 配置 Redis
 info "检查 Redis 配置..."
 
+REDIS_ALREADY_RUNNING=0
 for candidate in 6379 6380 6381; do
-    if ss -lnt 2>/dev/null | awk '{print $4}' | grep -q ":${candidate}$"; then
-        continue
-    else
+    if redis-cli -h 127.0.0.1 -p ${candidate} ping >/dev/null 2>&1; then
         REDIS_PORT_SELECTED=$candidate
+        REDIS_ALREADY_RUNNING=1
         break
     fi
+    if ss -lnt 2>/dev/null | awk '{print $4}' | grep -q ":${candidate}$"; then
+        continue
+    fi
+    REDIS_PORT_SELECTED=$candidate
+    break
 done
 if ss -lnt 2>/dev/null | awk '{print $4}' | grep -q ":${REDIS_PORT_SELECTED}$"; then
-    error "Redis 端口 ${REDIS_PORT_SELECTED} 已被占用，请先释放端口"
+    if [[ $REDIS_ALREADY_RUNNING -eq 0 ]]; then
+        error "Redis 端口 ${REDIS_PORT_SELECTED} 已被占用，请先释放端口"
+    fi
 fi
 
 # 预防性修复：强制 Redis 仅监听 IPv4 (解决 IPv6 缺失导致的启动失败)
@@ -230,7 +237,9 @@ if [[ -f /etc/redis/redis.conf ]]; then
     fi
 fi
 
-if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet redis-server; then
+if [[ $REDIS_ALREADY_RUNNING -eq 1 ]]; then
+    success "Redis 已在端口 ${REDIS_PORT_SELECTED} 运行"
+elif [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet redis-server; then
     success "Redis 服务运行正常"
 else
     if [[ $HAS_SYSTEMD -eq 1 ]]; then
@@ -446,6 +455,25 @@ EOF
     warn "请编辑 .env 文件并填写正确的配置值"
 else
     info "环境配置文件已存在，跳过创建"
+    if ! grep -q "^BOT_USERNAME=" "$PROJECT_DIR/.env"; then
+        echo -e "${yellow}"
+        read -p "请输入您的 Telegram Bot 用户名 (不含@): " USER_BOT_USERNAME
+        echo -e "${reset}"
+        if [[ -z "$USER_BOT_USERNAME" ]]; then
+            error "BOT_USERNAME 不能为空，请补充后重试"
+        fi
+        echo "BOT_USERNAME=$USER_BOT_USERNAME" >> "$PROJECT_DIR/.env"
+    fi
+    if grep -q "^REDIS_PORT=" "$PROJECT_DIR/.env"; then
+        sed -i "s/^REDIS_PORT=.*/REDIS_PORT=${REDIS_PORT_SELECTED}/" "$PROJECT_DIR/.env"
+    else
+        echo "REDIS_PORT=${REDIS_PORT_SELECTED}" >> "$PROJECT_DIR/.env"
+    fi
+    if grep -q "^REDIS_URL=" "$PROJECT_DIR/.env"; then
+        sed -i "s#^REDIS_URL=.*#REDIS_URL=redis://127.0.0.1:${REDIS_PORT_SELECTED}/0#" "$PROJECT_DIR/.env"
+    else
+        echo "REDIS_URL=redis://127.0.0.1:${REDIS_PORT_SELECTED}/0" >> "$PROJECT_DIR/.env"
+    fi
 fi
 
 # 步骤6: 设置systemd服务
