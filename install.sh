@@ -30,6 +30,7 @@ fi
 PROJECT_NAME="搜书神器 V2"
 PROJECT_DIR="/opt/book_bot_v2"
 SERVICE_NAME="book-bot-v2"
+REDIS_PORT_SELECTED=6379
 
 # 欢迎界面
 clear
@@ -181,6 +182,18 @@ fi
 # 1.5 配置 Redis
 info "检查 Redis 配置..."
 
+for candidate in 6379 6380 6381; do
+    if ss -lnt 2>/dev/null | awk '{print $4}' | grep -q ":${candidate}$"; then
+        continue
+    else
+        REDIS_PORT_SELECTED=$candidate
+        break
+    fi
+done
+if ss -lnt 2>/dev/null | awk '{print $4}' | grep -q ":${REDIS_PORT_SELECTED}$"; then
+    error "Redis 端口 ${REDIS_PORT_SELECTED} 已被占用，请先释放端口"
+fi
+
 # 预防性修复：强制 Redis 仅监听 IPv4 (解决 IPv6 缺失导致的启动失败)
 if [[ -f /etc/redis/redis.conf ]]; then
     # 只要没有明确只绑定 127.0.0.1，就强制改写，防止 bind 127.0.0.1 ::1 引发问题
@@ -188,6 +201,9 @@ if [[ -f /etc/redis/redis.conf ]]; then
         info "优化 Redis 网络配置 (强制 IPv4)..."
         cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
         sed -i "s/^bind .*/bind 127.0.0.1/" /etc/redis/redis.conf
+    fi
+    if ! grep -q "^port ${REDIS_PORT_SELECTED}$" /etc/redis/redis.conf; then
+        sed -i "s/^port .*/port ${REDIS_PORT_SELECTED}/" /etc/redis/redis.conf
     fi
     
     # 修复权限：无论是否修改过，都强制修复权限，防止因权限问题导致启动失败
@@ -225,13 +241,13 @@ else
             warn "Redis 服务启动失败，尝试重启..."
             systemctl restart redis-server || true
         fi
-        if redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+        if redis-cli -h 127.0.0.1 -p ${REDIS_PORT_SELECTED} ping >/dev/null 2>&1; then
             success "Redis 服务启动成功"
         else
             warn "Redis 服务启动失败，尝试直接启动 Redis 进程..."
             redis-server /etc/redis/redis.conf --daemonize yes || true
             sleep 1
-            if redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+            if redis-cli -h 127.0.0.1 -p ${REDIS_PORT_SELECTED} ping >/dev/null 2>&1; then
                 warn "Redis 已通过直接进程启动，但 systemd 服务未就绪"
             else
                 warn "Redis 服务启动失败，正在收集错误日志..."
@@ -245,7 +261,7 @@ else
         warn "检测到非 systemd 环境，尝试直接启动 Redis 进程"
         redis-server /etc/redis/redis.conf --daemonize yes || true
         sleep 1
-        if redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+        if redis-cli -h 127.0.0.1 -p ${REDIS_PORT_SELECTED} ping >/dev/null 2>&1; then
             success "Redis 服务启动成功"
         else
             error "Redis 服务无法启动，请检查 redis.conf 配置"
@@ -256,12 +272,12 @@ fi
 # 等待 Redis 就绪
 info "等待 Redis 服务就绪..."
 for i in {1..10}; do
-    if redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+    if redis-cli -h 127.0.0.1 -p ${REDIS_PORT_SELECTED} ping >/dev/null 2>&1; then
         success "Redis 连接成功"
         break
     fi
     if [ $i -eq 10 ]; then
-        warn "无法连接到 Redis (127.0.0.1)，后续步骤可能会失败"
+        warn "无法连接到 Redis (127.0.0.1:${REDIS_PORT_SELECTED})，后续步骤可能会失败"
     fi
     sleep 1
 done
@@ -397,9 +413,9 @@ DB_USER=bookbot
 DB_PASSWORD=password
 
 # Redis 配置
-REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_URL=redis://127.0.0.1:${REDIS_PORT_SELECTED}/0
 REDIS_HOST=127.0.0.1
-REDIS_PORT=6379
+REDIS_PORT=${REDIS_PORT_SELECTED}
 REDIS_DB=0
 
 # Meilisearch 配置
