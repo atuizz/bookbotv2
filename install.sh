@@ -166,6 +166,19 @@ else
     fi
 fi
 
+# 等待 Redis 就绪
+info "等待 Redis 服务就绪..."
+for i in {1..10}; do
+    if redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+        success "Redis 连接成功"
+        break
+    fi
+    if [ $i -eq 10 ]; then
+        warn "无法连接到 Redis (127.0.0.1)，后续步骤可能会失败"
+    fi
+    sleep 1
+done
+
 # 2. 配置 PostgreSQL
 info "检查 PostgreSQL 配置..."
 if systemctl is-active --quiet postgresql; then
@@ -285,16 +298,16 @@ BOT_NAME=搜书神器 V2
 BOT_VERSION=2.0.0
 
 # 数据库配置
-DATABASE_URL=postgresql+asyncpg://bookbot:password@localhost:5432/bookbot_v2
-DB_HOST=localhost
+DATABASE_URL=postgresql+asyncpg://bookbot:password@127.0.0.1:5432/bookbot_v2
+DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_NAME=bookbot_v2
 DB_USER=bookbot
 DB_PASSWORD=password
 
 # Redis 配置
-REDIS_URL=redis://localhost:6379/0
-REDIS_HOST=localhost
+REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_DB=0
 

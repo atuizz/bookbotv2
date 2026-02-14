@@ -82,10 +82,12 @@ check_services() {
     fi
 
     # 检查 Redis
-    if redis-cli -h ${REDIS_HOST:-localhost} -p ${REDIS_PORT:-6379} ping &>/dev/null | grep -q PONG; then
+    if redis-cli -h ${REDIS_HOST:-127.0.0.1} -p ${REDIS_PORT:-6379} ping >/dev/null 2>&1; then
         log_success "Redis 运行正常"
     else
-        log_error "Redis 未启动"
+        # 尝试输出错误信息
+        log_error "Redis 未启动或无法连接:"
+        redis-cli -h ${REDIS_HOST:-127.0.0.1} -p ${REDIS_PORT:-6379} ping || true
         all_ok=false
     fi
 
