@@ -156,8 +156,12 @@ if [[ -f /etc/redis/redis.conf ]]; then
         info "优化 Redis 网络配置 (强制 IPv4)..."
         cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
         sed -i "s/^bind .*/bind 127.0.0.1/" /etc/redis/redis.conf
-        # 确保保护模式开启（配合 bind 127.0.0.1 安全使用）
-        # sed -i "s/^protected-mode no/protected-mode yes/" /etc/redis/redis.conf
+        
+        # 修复权限：sed -i 可能导致文件属主变为 root，导致 redis 用户无法读取
+        if id "redis" &>/dev/null; then
+            chown redis:redis /etc/redis/redis.conf
+            chmod 640 /etc/redis/redis.conf
+        fi
     fi
 fi
 
@@ -165,6 +169,8 @@ if systemctl is-active --quiet redis-server; then
     success "Redis 服务运行正常"
 else
     info "启动 Redis 服务..."
+    # 先尝试停止可能存在的僵尸进程
+    systemctl stop redis-server || true
     systemctl enable redis-server || true
     
     # 尝试启动
@@ -177,7 +183,16 @@ else
     if systemctl is-active --quiet redis-server; then
         success "Redis 服务启动成功"
     else
-        error "Redis 服务启动失败。请手动执行: systemctl status redis-server"
+        warn "Redis 服务启动失败，正在收集错误日志..."
+        echo -e "${red}=== Redis 错误日志 (最后 20 行) ===${reset}"
+        journalctl -xeu redis-server.service --no-pager | tail -n 20
+        echo -e "${red}=====================================${reset}"
+        
+        # 尝试最后的挽救：如果是因为 protected-mode 导致的（虽然这里只绑了 127.0.0.1）
+        # 或者尝试直接前台运行测试配置是否正确
+        # redis-server /etc/redis/redis.conf --test-memory 2
+        
+        error "Redis 服务无法启动，请根据上方日志排查问题。"
     fi
 fi
 
