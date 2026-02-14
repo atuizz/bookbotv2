@@ -167,6 +167,14 @@ if [[ -f /etc/redis/redis.conf ]]; then
         if [[ -d /var/log/redis ]]; then
             chown -R redis:redis /var/log/redis
         fi
+        
+        # 关键修复：确保数据目录存在且权限正确（解决 FATAL CONFIG FILE ERROR: No such file or directory）
+        if [[ ! -d /var/lib/redis ]]; then
+            info "创建 Redis 数据目录..."
+            mkdir -p /var/lib/redis
+        fi
+        chown -R redis:redis /var/lib/redis
+        chmod 750 /var/lib/redis
     fi
 fi
 
