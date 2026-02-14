@@ -91,6 +91,9 @@ apt-get install -y -qq \
     tree \
     redis-tools \
     postgresql-client \
+    redis-server \
+    postgresql \
+    postgresql-contrib \
     2>&1 | while read -r line; do
         # 静默安装
         :
@@ -106,6 +109,66 @@ fi
 
 success "系统依赖安装完成"
 
+# 步骤2.5: 安装和配置服务
+step "步骤 2.5: 安装和配置服务"
+
+# 1. 配置 Meilisearch
+if ! command -v meilisearch &> /dev/null; then
+    info "安装 Meilisearch..."
+    curl -L https://install.meilisearch.com | sh
+    mv meilisearch /usr/local/bin/
+    chmod +x /usr/local/bin/meilisearch
+    success "Meilisearch 安装完成"
+fi
+
+# 配置 Meilisearch Systemd
+if [[ ! -f /etc/systemd/system/meilisearch.service ]]; then
+    info "配置 Meilisearch 服务..."
+    cat > /etc/systemd/system/meilisearch.service << EOF
+[Unit]
+Description=Meilisearch
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/meilisearch --master-key=masterKey --env=production --db-path=/var/lib/meilisearch/data
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    mkdir -p /var/lib/meilisearch/data
+    systemctl daemon-reload
+    systemctl enable meilisearch
+    systemctl start meilisearch
+    success "Meilisearch 服务已启动 (Master Key: masterKey)"
+fi
+
+# 2. 配置 PostgreSQL
+info "检查 PostgreSQL 配置..."
+if systemctl is-active --quiet postgresql; then
+    # 等待 PG 启动
+    sleep 2
+    
+    # 创建用户
+    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='bookbot'" | grep -q 1; then
+        info "创建数据库用户 bookbot..."
+        sudo -u postgres psql -c "CREATE USER bookbot WITH PASSWORD 'password';"
+    fi
+    
+    # 创建数据库
+    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='bookbot_v2'" | grep -q 1; then
+        info "创建数据库 bookbot_v2..."
+        sudo -u postgres psql -c "CREATE DATABASE bookbot_v2 OWNER bookbot;"
+    fi
+    
+    success "PostgreSQL 配置完成"
+else
+    warn "PostgreSQL 未运行，跳过自动配置"
+fi
+
 # 步骤3: 创建项目结构
 step "步骤 3/7: 创建项目结构"
 
@@ -119,8 +182,34 @@ if [[ -f "run_bot.py" ]]; then
     cp -r docs "$PROJECT_DIR/" 2>/dev/null || true
     success "项目文件复制完成"
 else
-    warn "未找到本地项目文件"
-    info "请手动上传项目文件到: $PROJECT_DIR"
+    info "未找到本地项目文件，尝试从 GitHub 下载..."
+    
+    # 检查是否已安装 git
+    if ! command -v git &> /dev/null; then
+        info "安装 git..."
+        apt-get install -y -qq git
+    fi
+
+    if [ -d "$PROJECT_DIR/.git" ]; then
+        info "项目目录已存在 Git 仓库，执行 git pull..."
+        cd "$PROJECT_DIR"
+        git pull || warn "Git pull 失败，可能存在冲突或网络问题"
+    else
+        info "正在克隆 Git 仓库..."
+        # 尝试清理目标目录（如果存在但不是git仓库）
+        if [ -d "$PROJECT_DIR" ]; then
+            warn "目标目录 $PROJECT_DIR 已存在但不是 Git 仓库，正在备份..."
+            mv "$PROJECT_DIR" "${PROJECT_DIR}_backup_$(date +%Y%m%d%H%M%S)"
+        fi
+        
+        git clone https://github.com/atuizz/bookbotv2.git "$PROJECT_DIR"
+    fi
+    
+    if [[ -f "$PROJECT_DIR/run_bot.py" ]]; then
+        success "项目文件下载完成"
+    else
+        error "项目文件下载失败，请检查网络连接或手动上传文件"
+    fi
 fi
 
 success "项目结构创建完成"
@@ -156,14 +245,22 @@ step "步骤 5/7: 配置环境变量"
 
 if [[ ! -f "$PROJECT_DIR/.env" ]]; then
     info "创建环境配置文件..."
+    
+    # 获取用户输入
+    echo -e "${yellow}"
+    read -p "请输入您的 Telegram Bot Token (直接回车使用默认值): " USER_BOT_TOKEN
+    echo -e "${reset}"
+    if [[ -z "$USER_BOT_TOKEN" ]]; then
+        USER_BOT_TOKEN="your_bot_token_here"
+    fi
 
-    cat > "$PROJECT_DIR/.env" << 'EOF'
+    cat > "$PROJECT_DIR/.env" << EOF
 # =====================================
 # 搜书神器 V2 - 环境配置
 # =====================================
 
 # Bot 配置
-BOT_TOKEN=your_bot_token_here
+BOT_TOKEN=$USER_BOT_TOKEN
 BOT_NAME=搜书神器 V2
 BOT_VERSION=2.0.0
 
@@ -173,7 +270,7 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=bookbot_v2
 DB_USER=bookbot
-DB_PASSWORD=your_secure_password
+DB_PASSWORD=$DB_PASSWORD
 
 # Redis 配置
 REDIS_URL=redis://localhost:6379/0
@@ -183,7 +280,7 @@ REDIS_DB=0
 
 # Meilisearch 配置
 MEILI_HOST=http://localhost:7700
-MEILI_API_KEY=your_meili_master_key
+MEILI_API_KEY=masterKey
 MEILI_INDEX_NAME=books
 
 # 备份频道配置
@@ -197,6 +294,7 @@ DEBUG=false
 ENVIRONMENT=production
 EOF
 
+    chmod 600 "$PROJECT_DIR/.env"
     success "环境配置文件创建完成"
     warn "请编辑 .env 文件并填写正确的配置值"
 else
@@ -218,8 +316,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$PROJECT_DIR
-Environment=PATH=$PROJECT_DIR/venv/bin
-ExecStart=$PROJECT_DIR/venv/bin/python $PROJECT_DIR/run_bot.py
+Environment=PATH=$PROJECT_DIR/.venv/bin
+ExecStart=$PROJECT_DIR/.venv/bin/python $PROJECT_DIR/run_bot.py
 Restart=always
 RestartSec=10
 
@@ -255,8 +353,40 @@ systemctl enable book-bot-v2-worker.service
 
 success "systemd服务配置完成"
 
-# 步骤7: 显示完成信息
-step "步骤 7/7: 部署完成"
+# 步骤7: 自动执行后续步骤
+step "步骤 7/8: 自动初始化与启动"
+
+info "设置文件权限..."
+chmod +x "$PROJECT_DIR/manage.sh"
+
+info "初始化数据库..."
+cd "$PROJECT_DIR"
+if ./manage.sh migrate; then
+    success "数据库初始化成功"
+else
+    error "数据库初始化失败，请检查配置"
+fi
+
+info "启动服务..."
+systemctl start book-bot-v2
+systemctl start book-bot-v2-worker
+
+# 检查服务状态
+sleep 3
+if systemctl is-active --quiet book-bot-v2; then
+    success "Bot 服务启动成功"
+else
+    warn "Bot 服务启动失败，请使用 systemctl status book-bot-v2 查看日志"
+fi
+
+if systemctl is-active --quiet book-bot-v2-worker; then
+    success "Worker 服务启动成功"
+else
+    warn "Worker 服务启动失败，请使用 systemctl status book-bot-v2-worker 查看日志"
+fi
+
+# 步骤8: 显示完成信息
+step "步骤 8/8: 部署完成"
 
 clear
 echo ""
@@ -268,32 +398,15 @@ echo -e "${green}╚════════════════════
 echo ""
 
 echo -e "${green}项目目录:${reset} $PROJECT_DIR"
-echo -e "${green}虚拟环境:${reset} $PROJECT_DIR/venv"
+echo -e "${green}虚拟环境:${reset} $PROJECT_DIR/.venv"
 echo -e "${green}日志目录:${reset} $PROJECT_DIR/logs"
 echo ""
-
-echo -e "${yellow}接下来请完成以下步骤:${reset}"
-echo ""
-echo -e "${cyan}1. 编辑环境配置文件:${reset}"
-echo "   nano $PROJECT_DIR/.env"
-echo ""
-echo -e "${cyan}2. 初始化数据库:${reset}"
-echo "   cd $PROJECT_DIR && ./manage.sh migrate"
-echo ""
-echo -e "${cyan}3. 启动服务:${reset}"
-echo "   systemctl start book-bot-v2"
-echo "   systemctl start book-bot-v2-worker"
-echo ""
-echo -e "${cyan}4. 查看状态:${reset}"
-echo "   systemctl status book-bot-v2"
-echo "   journalctl -u book-bot-v2 -f"
-echo ""
-echo -e "${cyan}5. 查看日志:${reset}"
-echo "   tail -f $PROJECT_DIR/logs/bot.log"
+echo -e "${green}服务状态:${reset}"
+systemctl status book-bot-v2 --no-pager | grep "Active:" || true
+systemctl status book-bot-v2-worker --no-pager | grep "Active:" || true
 echo ""
 
-success "部署完成!"
-log "部署完成"
+success "所有服务已启动，您可以开始使用了！"
 
 # 清理
 rm -f $0
