@@ -220,10 +220,10 @@ step "步骤 4/7: 创建Python虚拟环境"
 cd "$PROJECT_DIR"
 
 info "创建 Python 虚拟环境..."
-python3.11 -m venv venv
+python3.11 -m venv .venv
 
 info "激活虚拟环境并安装依赖..."
-source venv/bin/activate
+source .venv/bin/activate
 
 # 升级pip
 pip install --upgrade pip setuptools wheel -q
