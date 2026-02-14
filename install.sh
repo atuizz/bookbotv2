@@ -148,32 +148,37 @@ fi
 
 # 1.5 配置 Redis
 info "检查 Redis 配置..."
+
+# 预防性修复：强制 Redis 仅监听 IPv4 (解决 IPv6 缺失导致的启动失败)
+if [[ -f /etc/redis/redis.conf ]]; then
+    # 只要没有明确只绑定 127.0.0.1，就强制改写，防止 bind 127.0.0.1 ::1 引发问题
+    if ! grep -q "^bind 127.0.0.1$" /etc/redis/redis.conf; then
+        info "优化 Redis 网络配置 (强制 IPv4)..."
+        cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
+        sed -i "s/^bind .*/bind 127.0.0.1/" /etc/redis/redis.conf
+        # 确保保护模式开启（配合 bind 127.0.0.1 安全使用）
+        # sed -i "s/^protected-mode no/protected-mode yes/" /etc/redis/redis.conf
+    fi
+fi
+
 if systemctl is-active --quiet redis-server; then
     success "Redis 服务运行正常"
 else
     info "启动 Redis 服务..."
     systemctl enable redis-server || true
-    # 使用 if 防止 set -e 导致脚本退出
+    
+    # 尝试启动
     if ! systemctl start redis-server; then
-        warn "Redis 服务首次启动失败，尝试自动修复配置..."
-        
-        # 常见问题修复：修改绑定地址（某些环境不支持 IPv6）
-        if [[ -f /etc/redis/redis.conf ]]; then
-            info "尝试强制 Redis 仅监听 IPv4..."
-            # 备份配置文件
-            cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
-            # 替换 bind 配置，强制仅使用 127.0.0.1
-            sed -i "s/^bind .*/bind 127.0.0.1/" /etc/redis/redis.conf
-            # 关闭保护模式（可选，但在 localhost 环境下通常安全且能解决一些连接问题，这里保持默认，仅修改 bind）
-            # sed -i "s/^protected-mode yes/protected-mode no/" /etc/redis/redis.conf
-        fi
-        
-        # 再次尝试启动
-        if ! systemctl restart redis-server; then
-            error "Redis 服务启动失败。请手动检查日志: systemctl status redis-server"
-        fi
+        warn "Redis 服务启动失败，尝试重启..."
+        systemctl restart redis-server || true
     fi
-    success "Redis 服务启动成功"
+    
+    # 再次检查状态
+    if systemctl is-active --quiet redis-server; then
+        success "Redis 服务启动成功"
+    else
+        error "Redis 服务启动失败。请手动执行: systemctl status redis-server"
+    fi
 fi
 
 # 等待 Redis 就绪
