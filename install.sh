@@ -146,6 +146,26 @@ EOF
     success "Meilisearch 服务已启动 (Master Key: masterKey)"
 fi
 
+# 1.5 配置 Redis
+info "检查 Redis 配置..."
+if systemctl is-active --quiet redis-server; then
+    success "Redis 服务运行正常"
+else
+    info "启动 Redis 服务..."
+    systemctl enable redis-server
+    systemctl start redis-server
+    if systemctl is-active --quiet redis-server; then
+        success "Redis 服务启动成功"
+    else
+        warn "Redis 服务启动失败，请手动检查: systemctl status redis-server"
+        # 尝试修改绑定配置（允许本地连接）
+        if [[ -f /etc/redis/redis.conf ]]; then
+            sed -i "s/^bind .*/bind 127.0.0.1 ::1/" /etc/redis/redis.conf
+            systemctl restart redis-server
+        fi
+    fi
+fi
+
 # 2. 配置 PostgreSQL
 info "检查 PostgreSQL 配置..."
 if systemctl is-active --quiet postgresql; then
