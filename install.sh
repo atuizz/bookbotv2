@@ -393,6 +393,12 @@ if [[ ! -f "$PROJECT_DIR/.env" ]]; then
     if [[ -z "$USER_BOT_TOKEN" ]]; then
         USER_BOT_TOKEN="your_bot_token_here"
     fi
+    echo -e "${yellow}"
+    read -p "请输入您的 Telegram Bot 用户名 (不含@，直接回车使用默认值): " USER_BOT_USERNAME
+    echo -e "${reset}"
+    if [[ -z "$USER_BOT_USERNAME" ]]; then
+        USER_BOT_USERNAME="your_bot_username"
+    fi
 
     cat > "$PROJECT_DIR/.env" << EOF
 # =====================================
@@ -401,6 +407,7 @@ if [[ ! -f "$PROJECT_DIR/.env" ]]; then
 
 # Bot 配置
 BOT_TOKEN=$USER_BOT_TOKEN
+BOT_USERNAME=$USER_BOT_USERNAME
 BOT_NAME=搜书神器 V2
 BOT_VERSION=2.0.0
 
