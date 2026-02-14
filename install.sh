@@ -31,6 +31,18 @@ PROJECT_NAME="搜书神器 V2"
 PROJECT_DIR="/opt/book_bot_v2"
 SERVICE_NAME="book-bot-v2"
 REDIS_PORT_SELECTED=6379
+DB_DEFAULT_HOST="127.0.0.1"
+DB_DEFAULT_PORT="5432"
+DB_DEFAULT_NAME="bookbot_v2"
+DB_DEFAULT_USER="bookbot"
+DB_DEFAULT_PASSWORD="password"
+
+env_get() {
+    local key="$1"
+    if [[ -f "$PROJECT_DIR/.env" ]]; then
+        grep -E "^${key}=" "$PROJECT_DIR/.env" | tail -n 1 | cut -d= -f2-
+    fi
+}
 
 # 欢迎界面
 clear
@@ -291,33 +303,6 @@ for i in {1..10}; do
     sleep 1
 done
 
-# 2. 配置 PostgreSQL
-info "检查 PostgreSQL 配置..."
-if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet postgresql; then
-    # 等待 PG 启动
-    sleep 2
-    
-    # 创建用户
-    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='bookbot'" | grep -q 1; then
-        info "创建数据库用户 bookbot..."
-        sudo -u postgres psql -c "CREATE USER bookbot WITH PASSWORD 'password';"
-    fi
-    
-    # 创建数据库
-    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='bookbot_v2'" | grep -q 1; then
-        info "创建数据库 bookbot_v2..."
-        sudo -u postgres psql -c "CREATE DATABASE bookbot_v2 OWNER bookbot;"
-    fi
-    
-    success "PostgreSQL 配置完成"
-else
-    if [[ $HAS_SYSTEMD -eq 1 ]]; then
-        warn "PostgreSQL 未运行，跳过自动配置"
-    else
-        warn "检测到非 systemd 环境，跳过 PostgreSQL 自动配置"
-    fi
-fi
-
 # 步骤3: 创建项目结构
 step "步骤 3/7: 创建项目结构"
 
@@ -421,12 +406,12 @@ BOT_NAME=搜书神器 V2
 BOT_VERSION=2.0.0
 
 # 数据库配置
-DATABASE_URL=postgresql+asyncpg://bookbot:password@127.0.0.1:5432/bookbot_v2
-DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_NAME=bookbot_v2
-DB_USER=bookbot
-DB_PASSWORD=password
+DATABASE_URL=postgresql+asyncpg://${DB_DEFAULT_USER}:${DB_DEFAULT_PASSWORD}@${DB_DEFAULT_HOST}:${DB_DEFAULT_PORT}/${DB_DEFAULT_NAME}
+DB_HOST=${DB_DEFAULT_HOST}
+DB_PORT=${DB_DEFAULT_PORT}
+DB_NAME=${DB_DEFAULT_NAME}
+DB_USER=${DB_DEFAULT_USER}
+DB_PASSWORD=${DB_DEFAULT_PASSWORD}
 
 # Redis 配置
 REDIS_URL=redis://127.0.0.1:${REDIS_PORT_SELECTED}/0
@@ -464,6 +449,9 @@ else
         fi
         echo "BOT_USERNAME=$USER_BOT_USERNAME" >> "$PROJECT_DIR/.env"
     fi
+    if ! grep -q "^DB_PASSWORD=" "$PROJECT_DIR/.env"; then
+        echo "DB_PASSWORD=${DB_DEFAULT_PASSWORD}" >> "$PROJECT_DIR/.env"
+    fi
     if grep -q "^REDIS_PORT=" "$PROJECT_DIR/.env"; then
         sed -i "s/^REDIS_PORT=.*/REDIS_PORT=${REDIS_PORT_SELECTED}/" "$PROJECT_DIR/.env"
     else
@@ -473,6 +461,38 @@ else
         sed -i "s#^REDIS_URL=.*#REDIS_URL=redis://127.0.0.1:${REDIS_PORT_SELECTED}/0#" "$PROJECT_DIR/.env"
     else
         echo "REDIS_URL=redis://127.0.0.1:${REDIS_PORT_SELECTED}/0" >> "$PROJECT_DIR/.env"
+    fi
+fi
+
+DB_USER_EFFECTIVE=$(env_get DB_USER)
+DB_NAME_EFFECTIVE=$(env_get DB_NAME)
+DB_PASSWORD_EFFECTIVE=$(env_get DB_PASSWORD)
+DB_HOST_EFFECTIVE=$(env_get DB_HOST)
+DB_PORT_EFFECTIVE=$(env_get DB_PORT)
+if [[ -z "$DB_USER_EFFECTIVE" ]]; then DB_USER_EFFECTIVE="$DB_DEFAULT_USER"; fi
+if [[ -z "$DB_NAME_EFFECTIVE" ]]; then DB_NAME_EFFECTIVE="$DB_DEFAULT_NAME"; fi
+if [[ -z "$DB_PASSWORD_EFFECTIVE" ]]; then DB_PASSWORD_EFFECTIVE="$DB_DEFAULT_PASSWORD"; fi
+if [[ -z "$DB_HOST_EFFECTIVE" ]]; then DB_HOST_EFFECTIVE="$DB_DEFAULT_HOST"; fi
+if [[ -z "$DB_PORT_EFFECTIVE" ]]; then DB_PORT_EFFECTIVE="$DB_DEFAULT_PORT"; fi
+
+info "检查 PostgreSQL 配置..."
+if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet postgresql; then
+    sleep 2
+    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER_EFFECTIVE}'" | grep -q 1; then
+        info "创建数据库用户 ${DB_USER_EFFECTIVE}..."
+        sudo -u postgres psql -c "CREATE USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_EFFECTIVE}';"
+    fi
+    sudo -u postgres psql -c "ALTER USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_EFFECTIVE}';" || true
+    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME_EFFECTIVE}'" | grep -q 1; then
+        info "创建数据库 ${DB_NAME_EFFECTIVE}..."
+        sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME_EFFECTIVE} OWNER ${DB_USER_EFFECTIVE};"
+    fi
+    success "PostgreSQL 配置完成"
+else
+    if [[ $HAS_SYSTEMD -eq 1 ]]; then
+        warn "PostgreSQL 未运行，跳过自动配置"
+    else
+        warn "检测到非 systemd 环境，跳过 PostgreSQL 自动配置"
     fi
 fi
 
