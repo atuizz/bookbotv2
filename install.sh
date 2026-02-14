@@ -20,6 +20,11 @@ success() { echo -e "${green}[成功]${reset} $1"; }
 warn() { echo -e "${yellow}[警告]${reset} $1"; }
 error() { echo -e "${red}[错误]${reset} $1"; exit 1; }
 step() { echo -e "\n${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${reset}"; echo -e "${cyan}  $1${reset}"; echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${reset}\n"; }
+version_ge() { [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]; }
+HAS_SYSTEMD=0
+if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
+    HAS_SYSTEMD=1
+fi
 
 # 项目配置
 PROJECT_NAME="搜书神器 V2"
@@ -50,21 +55,29 @@ step "步骤 1/7: 检查系统环境"
 info "检查操作系统..."
 if [[ -f /etc/os-release ]]; then
     source /etc/os-release
+    OS_ID="${ID:-unknown}"
+    OS_VERSION_ID="${VERSION_ID:-unknown}"
     info "操作系统: $PRETTY_NAME"
 else
+    OS_ID="unknown"
+    OS_VERSION_ID="unknown"
     warn "无法确定操作系统类型"
 fi
 
 info "检查 Python 版本..."
+PYTHON_BIN=""
+PYTHON_VERSION=""
 if command -v python3.11 &> /dev/null; then
-    PYTHON_VERSION=$(python3.11 --version 2>&1)
-    success "Python 版本: $PYTHON_VERSION"
+    PYTHON_BIN="python3.11"
 elif command -v python3 &> /dev/null; then
-    PYTHON_VERSION=$(python3 --version 2>&1)
-    success "Python 版本: $PYTHON_VERSION"
-    warn "建议安装 Python 3.11 以获得最佳性能"
+    PYTHON_BIN="python3"
 else
     error "未找到 Python，请先安装 Python 3.11+"
+fi
+PYTHON_VERSION=$($PYTHON_BIN --version 2>&1 | awk '{print $2}')
+success "Python 版本: Python $PYTHON_VERSION"
+if ! version_ge "$PYTHON_VERSION" "3.11"; then
+    warn "建议安装 Python 3.11 以获得最佳性能"
 fi
 
 success "环境检查完成"
@@ -100,39 +113,27 @@ apt-get install -y -qq \
     done
 
 # 安装 Python 3.11 (如果系统没有)
-if ! command -v python3.11 &> /dev/null; then
-    info "安装 Python 3.11..."
-    
-    # 确保 add-apt-repository 可用
-    if ! command -v add-apt-repository &> /dev/null; then
-        apt-get install -y -qq software-properties-common
-    fi
-
-    # 检测系统类型，Debian 需要特殊处理
-    if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        if [[ "$ID" == "debian" ]]; then
-            # Debian 11/12 使用 sury 源安装 Python 3.11 (deadsnakes PPA 是 Ubuntu 专用)
-            info "检测到 Debian 系统，使用 sury.org 源安装 Python..."
-            apt-get install -y -qq lsb-release ca-certificates curl
-            curl -sSLo /usr/share/keyrings/deb.sury.org-php.gpg https://packages.sury.org/php/apt.gpg
-            echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/sury-php.list
-            apt-get update -qq
-            # Debian 下通常包名可能不同，尝试通用安装
-            apt-get install -y -qq python3.11 python3.11-venv python3.11-dev || {
-                 warn "从源安装 Python 3.11 失败，尝试编译安装或使用默认 Python 3..."
-            }
-        else
-            # Ubuntu/其他系统尝试 PPA
-            add-apt-repository -y ppa:deadsnakes/ppa 2>&1 > /dev/null
-            apt-get update -qq
-            apt-get install -y -qq python3.11 python3.11-venv python3.11-dev
-        fi
+if ! version_ge "$PYTHON_VERSION" "3.11"; then
+    info "尝试安装 Python 3.11..."
+    python_candidate=$(apt-cache policy python3.11 2>/dev/null | awk '/Candidate:/ {print $2}')
+    if [[ -n "$python_candidate" && "$python_candidate" != "(none)" ]]; then
+        apt-get install -y -qq python3.11 python3.11-venv python3.11-dev || true
     else
-        # 无法识别系统，尝试默认 PPA
-        add-apt-repository -y ppa:deadsnakes/ppa 2>&1 > /dev/null
-        apt-get update -qq
-        apt-get install -y -qq python3.11 python3.11-venv python3.11-dev
+        if [[ "$OS_ID" == "ubuntu" ]]; then
+            if ! command -v add-apt-repository &> /dev/null; then
+                apt-get install -y -qq software-properties-common
+            fi
+            add-apt-repository -y ppa:deadsnakes/ppa 2>&1 > /dev/null || true
+            apt-get update -qq
+            apt-get install -y -qq python3.11 python3.11-venv python3.11-dev || true
+        fi
+    fi
+    if command -v python3.11 &> /dev/null; then
+        PYTHON_BIN="python3.11"
+        PYTHON_VERSION=$(python3.11 --version 2>&1 | awk '{print $2}')
+        success "Python 版本: Python $PYTHON_VERSION"
+    else
+        warn "未能安装 Python 3.11，将继续使用当前 Python: $PYTHON_VERSION"
     fi
 fi
 
@@ -151,7 +152,7 @@ if ! command -v meilisearch &> /dev/null; then
 fi
 
 # 配置 Meilisearch Systemd
-if [[ ! -f /etc/systemd/system/meilisearch.service ]]; then
+if [[ $HAS_SYSTEMD -eq 1 && ! -f /etc/systemd/system/meilisearch.service ]]; then
     info "配置 Meilisearch 服务..."
     cat > /etc/systemd/system/meilisearch.service << EOF
 [Unit]
@@ -173,6 +174,8 @@ EOF
     systemctl enable meilisearch
     systemctl start meilisearch
     success "Meilisearch 服务已启动 (Master Key: masterKey)"
+elif [[ $HAS_SYSTEMD -eq 0 ]]; then
+    warn "检测到非 systemd 环境，跳过 Meilisearch 服务配置"
 fi
 
 # 1.5 配置 Redis
@@ -192,49 +195,61 @@ if [[ -f /etc/redis/redis.conf ]]; then
         info "修复 Redis 配置文件权限..."
         chown redis:redis /etc/redis/redis.conf
         chmod 640 /etc/redis/redis.conf
-        # 确保日志目录权限
         if [[ -d /var/log/redis ]]; then
             chown -R redis:redis /var/log/redis
         fi
         
-        # 关键修复：确保数据目录存在且权限正确（解决 FATAL CONFIG FILE ERROR: No such file or directory）
         if [[ ! -d /var/lib/redis ]]; then
             info "创建 Redis 数据目录..."
             mkdir -p /var/lib/redis
         fi
         chown -R redis:redis /var/lib/redis
         chmod 750 /var/lib/redis
+        
+        if [[ ! -d /run/redis ]]; then
+            mkdir -p /run/redis
+        fi
+        chown -R redis:redis /run/redis
+        chmod 755 /run/redis
     fi
 fi
 
-if systemctl is-active --quiet redis-server; then
+if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet redis-server; then
     success "Redis 服务运行正常"
 else
-    info "启动 Redis 服务..."
-    # 先尝试停止可能存在的僵尸进程
-    systemctl stop redis-server || true
-    systemctl enable redis-server || true
-    
-    # 尝试启动
-    if ! systemctl start redis-server; then
-        warn "Redis 服务启动失败，尝试重启..."
-        systemctl restart redis-server || true
-    fi
-    
-    # 再次检查状态
-    if systemctl is-active --quiet redis-server; then
-        success "Redis 服务启动成功"
+    if [[ $HAS_SYSTEMD -eq 1 ]]; then
+        info "启动 Redis 服务..."
+        systemctl stop redis-server || true
+        systemctl enable redis-server || true
+        if ! systemctl start redis-server; then
+            warn "Redis 服务启动失败，尝试重启..."
+            systemctl restart redis-server || true
+        fi
+        if redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+            success "Redis 服务启动成功"
+        else
+            warn "Redis 服务启动失败，尝试直接启动 Redis 进程..."
+            redis-server /etc/redis/redis.conf --daemonize yes || true
+            sleep 1
+            if redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+                warn "Redis 已通过直接进程启动，但 systemd 服务未就绪"
+            else
+                warn "Redis 服务启动失败，正在收集错误日志..."
+                echo -e "${red}=== Redis 错误日志 (最后 20 行) ===${reset}"
+                journalctl -xeu redis-server.service --no-pager | tail -n 20
+                echo -e "${red}=====================================${reset}"
+                error "Redis 服务无法启动，请根据上方日志排查问题。"
+            fi
+        fi
     else
-        warn "Redis 服务启动失败，正在收集错误日志..."
-        echo -e "${red}=== Redis 错误日志 (最后 20 行) ===${reset}"
-        journalctl -xeu redis-server.service --no-pager | tail -n 20
-        echo -e "${red}=====================================${reset}"
-        
-        # 尝试最后的挽救：如果是因为 protected-mode 导致的（虽然这里只绑了 127.0.0.1）
-        # 或者尝试直接前台运行测试配置是否正确
-        # redis-server /etc/redis/redis.conf --test-memory 2
-        
-        error "Redis 服务无法启动，请根据上方日志排查问题。"
+        warn "检测到非 systemd 环境，尝试直接启动 Redis 进程"
+        redis-server /etc/redis/redis.conf --daemonize yes || true
+        sleep 1
+        if redis-cli -h 127.0.0.1 ping >/dev/null 2>&1; then
+            success "Redis 服务启动成功"
+        else
+            error "Redis 服务无法启动，请检查 redis.conf 配置"
+        fi
     fi
 fi
 
@@ -253,7 +268,7 @@ done
 
 # 2. 配置 PostgreSQL
 info "检查 PostgreSQL 配置..."
-if systemctl is-active --quiet postgresql; then
+if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet postgresql; then
     # 等待 PG 启动
     sleep 2
     
@@ -271,7 +286,11 @@ if systemctl is-active --quiet postgresql; then
     
     success "PostgreSQL 配置完成"
 else
-    warn "PostgreSQL 未运行，跳过自动配置"
+    if [[ $HAS_SYSTEMD -eq 1 ]]; then
+        warn "PostgreSQL 未运行，跳过自动配置"
+    else
+        warn "检测到非 systemd 环境，跳过 PostgreSQL 自动配置"
+    fi
 fi
 
 # 步骤3: 创建项目结构
@@ -325,7 +344,7 @@ step "步骤 4/7: 创建Python虚拟环境"
 cd "$PROJECT_DIR"
 
 info "创建 Python 虚拟环境..."
-python3.11 -m venv .venv
+$PYTHON_BIN -m venv .venv
 
 info "激活虚拟环境并安装依赖..."
 source .venv/bin/activate
@@ -409,10 +428,11 @@ fi
 # 步骤6: 设置systemd服务
 step "步骤 6/7: 设置systemd服务"
 
-info "创建systemd服务文件..."
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
+    info "创建systemd服务文件..."
 
-# Bot服务
-cat > /etc/systemd/system/book-bot-v2.service << EOF
+    # Bot服务
+    cat > /etc/systemd/system/book-bot-v2.service << EOF
 [Unit]
 Description=搜书神器 V2 - Telegram Bot
 After=network.target
@@ -430,8 +450,8 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# Worker服务
-cat > /etc/systemd/system/book-bot-v2-worker.service << EOF
+    # Worker服务
+    cat > /etc/systemd/system/book-bot-v2-worker.service << EOF
 [Unit]
 Description=搜书神器 V2 - Background Worker
 After=network.target
@@ -449,14 +469,17 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# 重新加载systemd
-systemctl daemon-reload
+    # 重新加载systemd
+    systemctl daemon-reload
 
-# 启用服务
-systemctl enable book-bot-v2.service
-systemctl enable book-bot-v2-worker.service
+    # 启用服务
+    systemctl enable book-bot-v2.service
+    systemctl enable book-bot-v2-worker.service
 
-success "systemd服务配置完成"
+    success "systemd服务配置完成"
+else
+    warn "检测到非 systemd 环境，跳过 systemd 服务配置"
+fi
 
 # 步骤7: 自动执行后续步骤
 step "步骤 7/8: 自动初始化与启动"
@@ -472,22 +495,28 @@ else
     error "数据库初始化失败，请检查配置"
 fi
 
-info "启动服务..."
-systemctl start book-bot-v2
-systemctl start book-bot-v2-worker
-
-# 检查服务状态
-sleep 3
-if systemctl is-active --quiet book-bot-v2; then
-    success "Bot 服务启动成功"
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
+    info "启动服务..."
+    systemctl start book-bot-v2
+    systemctl start book-bot-v2-worker
 else
-    warn "Bot 服务启动失败，请使用 systemctl status book-bot-v2 查看日志"
+    warn "检测到非 systemd 环境，跳过服务启动"
 fi
 
-if systemctl is-active --quiet book-bot-v2-worker; then
-    success "Worker 服务启动成功"
-else
-    warn "Worker 服务启动失败，请使用 systemctl status book-bot-v2-worker 查看日志"
+# 检查服务状态
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
+    sleep 3
+    if systemctl is-active --quiet book-bot-v2; then
+        success "Bot 服务启动成功"
+    else
+        warn "Bot 服务启动失败，请使用 systemctl status book-bot-v2 查看日志"
+    fi
+
+    if systemctl is-active --quiet book-bot-v2-worker; then
+        success "Worker 服务启动成功"
+    else
+        warn "Worker 服务启动失败，请使用 systemctl status book-bot-v2-worker 查看日志"
+    fi
 fi
 
 # 步骤8: 显示完成信息
