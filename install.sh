@@ -335,8 +335,8 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$PROJECT_DIR
-Environment=PATH=$PROJECT_DIR/venv/bin
-ExecStart=$PROJECT_DIR/venv/bin/python -m app.worker
+Environment=PATH=$PROJECT_DIR/.venv/bin
+ExecStart=$PROJECT_DIR/.venv/bin/arq app.worker.WorkerSettings
 Restart=always
 RestartSec=10
 
