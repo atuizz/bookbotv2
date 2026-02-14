@@ -8,7 +8,6 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 
-from app.core.config import settings
 from app.core.logger import logger
 
 user_router = Router(name="user")

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from meilisearch import Client
 from meilisearch.errors import MeilisearchApiError
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.logger import logger
 
 
@@ -70,6 +70,7 @@ INDEX_SETTINGS = {
 async def init_meilisearch():
     """初始化 Meilisearch 索引"""
     logger.info("开始初始化 Meilisearch...")
+    settings = get_settings()
 
     # 创建客户端
     client = Client(

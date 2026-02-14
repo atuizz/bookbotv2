@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.models import Base
 
 # Alembic 配置对象
@@ -32,7 +32,7 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # 动态设置数据库 URL
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 
 def run_migrations_offline() -> None:

@@ -4,7 +4,7 @@
 基于 arq 的异步任务队列实现
 """
 
-import asyncio
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -12,7 +12,6 @@ from arq import create_pool
 from arq.connections import RedisSettings
 from arq.worker import Worker
 
-from app.core.config import settings
 from app.core.logger import logger
 
 
@@ -82,10 +81,10 @@ class WorkerSettings:
 
     # Redis 连接配置
     redis_settings = RedisSettings(
-        host=settings.redis_host,
-        port=settings.redis_port,
-        database=settings.redis_db,
-        password=settings.redis_password or None,
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", "6379")),
+        database=int(os.getenv("REDIS_DB", "0")),
+        password=os.getenv("REDIS_PASSWORD") or None,
     )
 
     # 任务函数列表

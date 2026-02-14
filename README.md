@@ -396,6 +396,9 @@ sudo journalctl -u book_bot_v2-worker -f
 运行测试套件:
 
 ```bash
+# 安装测试依赖
+pip install -r requirements-dev.txt
+
 # 运行所有测试
 pytest
 

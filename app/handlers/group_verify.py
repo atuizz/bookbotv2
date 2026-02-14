@@ -13,7 +13,6 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, ChatJoinRequest
 
-from app.core.config import settings
 from app.core.logger import logger
 
 group_verify_router = Router(name="group_verify")

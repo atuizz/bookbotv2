@@ -1,4 +1,4 @@
-﻿Python
+Python
 pycache/
 *.py[cod]
 *$py.class
@@ -13,9 +13,12 @@ ENV/
 .vscode/
 .claude/
 .cursor/
+.trae/
 *.log
 数据库与搜索索引
 *.db
 *.sqlite
 data/
 meili_data/
+docs/*.html
+docs/_generated/

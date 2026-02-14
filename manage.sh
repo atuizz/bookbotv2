@@ -195,7 +195,7 @@ cmd_start_worker() {
     check_services || exit 1
 
     log_info "Worker 正在启动... (按 Ctrl+C 停止)"
-    cd "$PROJECT_DIR" && exec "$PYTHON" -m app.worker
+    cd "$PROJECT_DIR" && exec "$VENV_DIR/bin/arq" app.worker.WorkerSettings
 }
 
 cmd_gen_service() {

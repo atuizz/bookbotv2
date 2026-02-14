@@ -25,7 +25,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.types import Document, Message
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.logger import logger
 
 
@@ -133,6 +133,7 @@ class BackupService:
 
     async def initialize(self):
         """初始化备份服务"""
+        settings = get_settings()
         # 加载备份频道配置
         if settings.backup_channel_id:
             self._backup_channels.append(settings.backup_channel_id)
@@ -151,6 +152,7 @@ class BackupService:
 
     async def _load_cache(self):
         """从持久化存储加载缓存"""
+        settings = get_settings()
         cache_file = Path(settings.data_dir) / "backup_cache.json"
         if not cache_file.exists():
             return
@@ -170,6 +172,7 @@ class BackupService:
 
     async def _save_cache(self):
         """保存缓存到持久化存储"""
+        settings = get_settings()
         cache_file = Path(settings.data_dir) / "backup_cache.json"
 
         try:

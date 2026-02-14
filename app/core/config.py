@@ -129,7 +129,3 @@ def get_settings() -> Settings:
         _settings = Settings()
     return _settings
 
-
-# 注意：不要在模块导入时实例化配置
-# 使用时通过 get_settings() 获取
-settings = get_settings()

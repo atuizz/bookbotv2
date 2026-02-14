@@ -17,7 +17,7 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.logger import logger
 
 invite_router = Router(name="invite")
@@ -33,13 +33,14 @@ def generate_invite_link(user_id: int) -> str:
     格式: https://t.me/{bot_username}?start={invite_code}
     邀请码: {user_id}_{hash}
     """
+    settings = get_settings()
     # 生成邀请码
-    hash_input = f"{user_id}:{settings.bot_token[:10]}:{datetime.now().strftime('%Y%m')}"
+    hash_input = f"{user_id}:{settings.bot_username}:{datetime.now().strftime('%Y%m')}"
     hash_value = hashlib.md5(hash_input.encode()).hexdigest()[:8]
     invite_code = f"INV{user_id}{hash_value.upper()}"
 
     # 生成完整链接
-    bot_username = settings.bot_name.replace(" ", "_").lower()
+    bot_username = settings.bot_username.lstrip("@")
     return f"https://t.me/{bot_username}?start={invite_code}"
 
 

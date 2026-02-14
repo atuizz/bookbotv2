@@ -22,7 +22,6 @@ from aiogram.types import (
 )
 from aiogram.exceptions import TelegramBadRequest
 
-from app.core.config import settings
 from app.core.logger import logger
 from app.services.search import get_search_service
 from app.services.backup import get_backup_service

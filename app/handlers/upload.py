@@ -13,7 +13,6 @@ from aiogram.types import Message, Document, CallbackQuery
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
 
-from app.core.config import settings
 from app.core.logger import logger
 
 upload_router = Router(name="upload")

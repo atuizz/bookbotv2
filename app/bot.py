@@ -6,26 +6,27 @@
 
 import asyncio
 import sys
+from pathlib import Path
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
-from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.fsm.strategy import FSMStrategy
 
 # 确保项目根目录在路径中
-sys.path.insert(0, str(__file__).parent.parent)
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.logger import logger
 from app.handlers import register_handlers
 
 
 async def on_startup(bot: Bot) -> None:
     """Bot 启动时的初始化操作"""
+    settings = get_settings()
     logger.info("=" * 50)
     logger.info("搜书神器 V2 启动中...")
-    logger.info(f"Bot 名称: {settings.bot_name}")
-    logger.info(f"环境: {'开发' if settings.debug else '生产'}")
+    logger.info(f"Bot 用户名: @{settings.bot_username}")
+    logger.info(f"日志级别: {settings.log_level}")
 
     try:
         # 设置 Bot 命令菜单
@@ -79,6 +80,7 @@ async def on_shutdown(bot: Bot) -> None:
 
 async def main() -> None:
     """主入口函数"""
+    settings = get_settings()
 
     # 初始化 Bot
     bot = Bot(

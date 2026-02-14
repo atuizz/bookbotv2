@@ -6,17 +6,6 @@
 
 from aiogram import Dispatcher
 
-from app.handlers.common import common_router
-from app.handlers.search import search_router
-from app.handlers.upload import upload_router
-from app.handlers.user import user_router
-from app.handlers.tag_search import tag_search_router
-from app.handlers.group_verify import group_verify_router
-from app.handlers.settings import settings_router
-from app.handlers.rankings import rankings_router
-from app.handlers.invite import invite_router
-from app.handlers.book_detail import book_detail_router
-
 
 def register_handlers(dp: Dispatcher) -> None:
     """
@@ -25,6 +14,17 @@ def register_handlers(dp: Dispatcher) -> None:
     Args:
         dp: aiogram Dispatcher 实例
     """
+    from app.handlers.book_detail import book_detail_router
+    from app.handlers.common import common_router
+    from app.handlers.group_verify import group_verify_router
+    from app.handlers.invite import invite_router
+    from app.handlers.rankings import rankings_router
+    from app.handlers.search import search_router
+    from app.handlers.settings import settings_router
+    from app.handlers.tag_search import tag_search_router
+    from app.handlers.upload import upload_router
+    from app.handlers.user import user_router
+
     # 按照优先级顺序注册
     # 越靠前优先级越高
     dp.include_router(upload_router)       # 上传处理器 (需要优先处理文档)

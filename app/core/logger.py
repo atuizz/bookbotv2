@@ -6,9 +6,8 @@
 
 import logging
 import sys
+from pathlib import Path
 from typing import Any
-
-from app.core.config import settings
 
 
 class ColoredFormatter(logging.Formatter):
@@ -55,9 +54,23 @@ class Logger:
 
     def _setup_logger(self) -> None:
         """配置日志记录器"""
+        log_level = "INFO"
+        log_format = "json"
+        log_dir = Path(__file__).parent.parent.parent / "logs"
+
+        try:
+            from app.core.config import get_settings
+
+            settings = get_settings()
+            log_level = settings.log_level
+            log_format = settings.log_format
+            log_dir = settings.log_dir
+        except Exception:
+            pass
+
         # 创建日志记录器
         self._logger = logging.getLogger("bookbot")
-        self._logger.setLevel(getattr(logging, settings.log_level.upper()))
+        self._logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
         # 清除现有处理器
         self._logger.handlers = []
@@ -67,7 +80,7 @@ class Logger:
         console_handler.setLevel(logging.DEBUG)
 
         # 选择格式化器
-        if settings.log_format.lower() == "json":
+        if log_format.lower() == "json":
             formatter = logging.Formatter(
                 '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
             )
@@ -81,8 +94,8 @@ class Logger:
         self._logger.addHandler(console_handler)
 
         # 文件处理器 (生产环境)
-        if settings.log_level.upper() == "INFO" or settings.log_level.upper() == "DEBUG":
-            log_file = settings.log_dir / "bookbot.log"
+        if log_level.upper() in {"INFO", "DEBUG"}:
+            log_file = log_dir / "bookbot.log"
             log_file.parent.mkdir(parents=True, exist_ok=True)
 
             file_handler = logging.FileHandler(log_file, encoding='utf-8')

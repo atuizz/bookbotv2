@@ -11,7 +11,7 @@ from datetime import datetime
 from meilisearch import Client
 from meilisearch.errors import MeilisearchApiError
 
-from app.core.config import settings
+from app.core.config import get_settings
 from app.core.logger import logger
 
 
@@ -91,6 +91,7 @@ class SearchService:
 
     def __init__(self):
         """初始化搜索服务"""
+        settings = get_settings()
         self.client = Client(
             settings.meili_host,
             settings.meili_api_key,

@@ -18,7 +18,6 @@ from aiogram.types import (
 )
 from aiogram.exceptions import TelegramAPIError
 
-from app.core.config import settings
 from app.core.logger import logger
 from app.services.search import (
     get_search_service,
@@ -104,7 +103,9 @@ def format_word_count(count: int) -> str:
     if count < 10000:
         return f"{count}"
     elif count < 100000000:
-        return f"{count / 10000:.1f}万"
+        value = count / 10000
+        value = int(value * 10) / 10
+        return f"{value:.1f}万"
     else:
         return f"{count / 100000000:.1f}亿"
 

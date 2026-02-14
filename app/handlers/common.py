@@ -8,7 +8,6 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 
-from app.core.config import settings
 from app.core.logger import logger
 
 common_router = Router(name="common")
@@ -78,7 +77,7 @@ async def cmd_about(message: Message):
     about_text = f"""
 🤖 <b>搜书神器 V2</b>
 
-<b>版本:</b> 2.0.0
+<b>版本:</b> 2.0.1
 <b>技术栈:</b> Python 3.11, aiogram 3.x, PostgreSQL, Meilisearch
 
 <b>开源协议:</b> MIT License
