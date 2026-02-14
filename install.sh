@@ -440,6 +440,15 @@ EOF
     warn "请编辑 .env 文件并填写正确的配置值"
 else
     info "环境配置文件已存在，跳过创建"
+    if ! grep -q "^BOT_TOKEN=" "$PROJECT_DIR/.env"; then
+        echo -e "${yellow}"
+        read -p "请输入您的 Telegram Bot Token: " USER_BOT_TOKEN
+        echo -e "${reset}"
+        if [[ -z "$USER_BOT_TOKEN" ]]; then
+            error "BOT_TOKEN 不能为空，请补充后重试"
+        fi
+        echo "BOT_TOKEN=$USER_BOT_TOKEN" >> "$PROJECT_DIR/.env"
+    fi
     if ! grep -q "^BOT_USERNAME=" "$PROJECT_DIR/.env"; then
         echo -e "${yellow}"
         read -p "请输入您的 Telegram Bot 用户名 (不含@): " USER_BOT_USERNAME
@@ -451,6 +460,9 @@ else
     fi
     if ! grep -q "^DB_PASSWORD=" "$PROJECT_DIR/.env"; then
         echo "DB_PASSWORD=${DB_DEFAULT_PASSWORD}" >> "$PROJECT_DIR/.env"
+    fi
+    if ! grep -q "^MEILI_API_KEY=" "$PROJECT_DIR/.env"; then
+        echo "MEILI_API_KEY=masterKey" >> "$PROJECT_DIR/.env"
     fi
     if grep -q "^REDIS_PORT=" "$PROJECT_DIR/.env"; then
         sed -i "s/^REDIS_PORT=.*/REDIS_PORT=${REDIS_PORT_SELECTED}/" "$PROJECT_DIR/.env"
