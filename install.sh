@@ -156,11 +156,16 @@ if [[ -f /etc/redis/redis.conf ]]; then
         info "优化 Redis 网络配置 (强制 IPv4)..."
         cp /etc/redis/redis.conf /etc/redis/redis.conf.bak
         sed -i "s/^bind .*/bind 127.0.0.1/" /etc/redis/redis.conf
-        
-        # 修复权限：sed -i 可能导致文件属主变为 root，导致 redis 用户无法读取
-        if id "redis" &>/dev/null; then
-            chown redis:redis /etc/redis/redis.conf
-            chmod 640 /etc/redis/redis.conf
+    fi
+    
+    # 修复权限：无论是否修改过，都强制修复权限，防止因权限问题导致启动失败
+    if id "redis" &>/dev/null; then
+        info "修复 Redis 配置文件权限..."
+        chown redis:redis /etc/redis/redis.conf
+        chmod 640 /etc/redis/redis.conf
+        # 确保日志目录权限
+        if [[ -d /var/log/redis ]]; then
+            chown -R redis:redis /var/log/redis
         fi
     fi
 fi
