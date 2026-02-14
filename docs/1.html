@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>搜书神器 V2 - 架构全景图 (终极兼容版)</title>
+    <!-- 使用最新的 v11 版本 -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f4f6f8; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); max-width: 1200px; margin: 0 auto; }
+        h2 { border-bottom: 3px solid #0088cc; padding-bottom: 15px; color: #333; }
+        .tips { background: #e3f2fd; padding: 10px; border-radius: 5px; color: #0d47a1; font-size: 0.9em; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>搜书神器 V2 - 系统逻辑架构图</h2>
+        <div class="tips">💡 提示：此图展示了从用户上传到多重备份的完整数据流向。</div>
+        
+        <div class="mermaid">
+            flowchart TD
+                %% 节点定义 (使用引号包裹防止语法错误)
+                User(("用户 (User)"))
+                Admin(("管理员 (Admin)"))
+
+                subgraph Core_Services ["核心服务集群"]
+                    direction TB
+                    TG_API["Telegram Bot API"]
+                    Bot["Bot Core / Aiogram"]
+                    Celery["Celery 异步 Worker"]
+                end
+
+                subgraph Data_Layer ["数据持久层"]
+                    direction TB
+                    Redis[("Redis 缓存/队列")]
+                    PG[("PostgreSQL 数据库")]
+                    Meili[("Meilisearch 搜索引擎")]
+                end
+
+                subgraph Backup_System ["备份与存储"]
+                    direction TB
+                    MainChannel["主频道/群组"]
+                    BackupChannel["私有备份频道"]
+                    S3["S3 对象存储 (预留接口)"]
+                end
+
+                %% 交互连线
+                User -->|1.搜索指令 /s| TG_API
+                User -->|2.上传文件| TG_API
+                TG_API <-->|Webhook| Bot
+                
+                Admin -->|Web 后台| Bot
+                Admin -->|/admin 指令| Bot
+
+                %% 内部数据流
+                Bot -->|读写| Redis
+                Bot -->|全文检索| Meili
+                Bot -->|元数据| PG
+                
+                Bot -->|3.文件入队| Redis
+                Redis -->|消费任务| Celery
+
+                %% Worker 处理流
+                Celery -->|4.去重 SHA256| PG
+                Celery -->|5.混合打标| Meili
+                Celery -->|6.转发备份| BackupChannel
+                Celery -->|7.完成通知| User
+
+                %% 备份流
+                BackupChannel -.->|记录 File_ID| PG
+                BackupChannel -.->|冷备份| S3
+
+                %% 样式定义
+                classDef blue fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+                classDef green fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+                classDef orange fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+
+                class Bot,TG_API blue;
+                class PG,Meili,Redis green;
+                class Celery orange;
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'base' });
+    </script>
+</body>
+</html>

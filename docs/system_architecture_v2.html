@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>搜书神器 V2 - 架构全景图 (Arq版)</title>
+    <!-- 使用最新的 v11 版本 -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f4f6f8; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); max-width: 1200px; margin: 0 auto; }
+        h2 { border-bottom: 3px solid #0088cc; padding-bottom: 15px; color: #333; }
+        .tips { background: #e3f2fd; padding: 10px; border-radius: 5px; color: #0d47a1; font-size: 0.9em; margin-bottom: 20px; }
+        .legend { margin-top: 20px; font-size: 0.85em; color: #666; border-top: 1px solid #eee; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>搜书神器 V2 - 系统逻辑架构图 (含规划)</h2>
+        <div class="tips">💡 提示：实线表示已实现功能，虚线/灰色节点表示规划中(Phase 3)功能。</div>
+        
+        <div class="mermaid">
+            flowchart TD
+                %% 节点定义
+                User(("用户 (User)"))
+                Admin(("管理员 (Admin)"))
+
+                subgraph Core_Services ["核心服务集群"]
+                    direction TB
+                    TG_API["Telegram Bot API"]
+                    Bot["Bot Core (Aiogram 3.x)"]
+                    Arq["Arq 异步 Worker"]
+                    
+                    %% 待开发核心模块
+                    AdvDownload["下载处理器 (优化版)"]
+                    I18n["多语言支持 (i18n)"]
+                end
+                
+                subgraph Future_System ["扩展管理系统 (Phase 3)"]
+                    direction TB
+                    WebAdmin["Web 管理后台 (FastAPI)"]
+                    Stats["数据统计报表"]
+                    Docker["Docker 容器化"]
+                end
+
+                subgraph Data_Layer ["数据持久层"]
+                    direction TB
+                    Redis[("Redis 缓存/消息队列")]
+                    PG[("PostgreSQL 数据库")]
+                    Meili[("Meilisearch 搜索引擎")]
+                end
+
+                subgraph Backup_System ["备份与存储"]
+                    direction TB
+                    BackupChannel["私有备份频道"]
+                    S3["S3 对象存储 (预留)"]
+                end
+
+                %% 交互连线
+                User -->|"1.搜索指令 /s, /ss"| TG_API
+                User -->|"2.上传文件"| TG_API
+                TG_API <-->|"Webhook/Polling"| Bot
+                
+                %% Admin
+                Admin -.->|"管理指令"| Bot
+                Admin -.->|"Web 访问"| WebAdmin
+
+                %% 内部数据流 - Bot直接交互
+                Bot -->|"读写缓存"| Redis
+                Bot -->|"全文检索"| Meili
+                Bot -->|"元数据读写"| PG
+                Bot -.->|"下载流程"| AdvDownload
+                Bot -.->|"语言适配"| I18n
+                
+                %% 扩展系统流
+                WebAdmin -.->|"管理数据"| PG
+                WebAdmin -.->|"监控状态"| Redis
+                Stats -.->|"分析数据"| PG
+                
+                %% 异步任务流
+                Bot -->|"3.文件入队 (arq)"| Redis
+                Redis -->|"消费任务"| Arq
+
+                %% Worker 处理流
+                Arq -->|"4.去重 (SHA256)"| PG
+                Arq -->|"5.混合打标/索引"| Meili
+                Arq -->|"6.转发备份"| BackupChannel
+                Arq -->|"7.完成通知"| TG_API
+                
+                %% 备份流
+                BackupChannel -.->|"记录 File_ID"| Arq
+                BackupChannel -.->|"冷备份"| S3
+
+                %% 样式定义
+                classDef blue fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+                classDef green fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+                classDef orange fill:#fff3e0,stroke:#ef6c00,stroke-width:2px;
+                classDef future fill:#f5f5f5,stroke:#9e9e9e,stroke-width:2px,stroke-dasharray: 5 5,color:#999;
+
+                class Bot,TG_API blue;
+                class PG,Meili,Redis green;
+                class Arq orange;
+                class S3,WebAdmin,Stats,Docker,AdvDownload,I18n future;
+        </div>
+
+        <div class="legend">
+            <strong>图例说明：</strong><br>
+            🔵 蓝色节点：核心服务与接口 (已上线)<br>
+            🟢 绿色节点：数据存储与检索引擎 (已上线)<br>
+            🟠 橙色节点：异步任务处理 (Arq) (已上线)<br>
+            ⚪ 灰色虚线：Phase 3 规划中功能 (Web后台、统计、S3、Docker等)
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'base' });
+    </script>
+</body>
+</html>

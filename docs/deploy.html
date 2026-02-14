@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>搜书神器 V2 - 部署教程</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding: 40px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            color: white;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 35px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section h2 .icon {
+            font-size: 1.2em;
+        }
+
+        .section h3 {
+            color: #555;
+            margin: 25px 0 15px;
+            font-size: 1.2em;
+            border-left: 3px solid #667eea;
+            padding-left: 12px;
+        }
+
+        .section p {
+            margin-bottom: 15px;
+            color: #555;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .warning strong {
+            color: #856404;
+        }
+
+        .info {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .info strong {
+            color: #0c5460;
+        }
+
+        .step {
+            display: flex;
+            gap: 20px;
+            margin: 25px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .step-number {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.2em;
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
+        }
+
+        .step-content h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        code {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+        }
+
+        pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .command {
+            background: #f0f0f0;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 0 8px 8px 0;
+            font-family: monospace;
+        }
+
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: white;
+            opacity: 0.9;
+        }
+
+        footer a {
+            color: white;
+            text-decoration: underline;
+        }
+
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 8px;
+            transition: background 0.3s;
+        }
+
+        .nav-links a:hover {
+            background: rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📚 搜书神器 V2</h1>
+            <p>完整部署教程与项目架构说明</p>
+            <div class="nav-links">
+                <a href="index.html">🏠 项目架构</a>
+                <a href="#quick-start">🚀 快速开始</a>
+                <a href="#deploy">📖 部署教程</a>
+            </div>
+        </header>
+
+        <div id="quick-start" class="section">
+            <h2><span class="icon">🚀</span> 快速开始</h2>
+
+            <div class="warning">
+                <strong>⚠️ 系统要求</strong><br>
+                • Ubuntu 22.04 LTS / Debian 12<br>
+                • Python 3.11+<br>
+                • 内存: 最低 2GB (推荐 4GB+)<br>
+                • 磁盘: 最低 20GB 可用空间
+            </div>
+
+            <h3>一键自动部署 (推荐)</h3>
+
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h4>克隆项目并运行部署脚本</h4>
+                    <pre><code># 克隆项目
+git clone https://github.com/yourusername/book_bot_v2.git
+cd book_bot_v2
+
+# 运行自动部署脚本 (需要 root 权限)
+sudo bash deploy.sh</code></pre>
+                    <p>部署脚本会自动完成以下操作：</p>
+                    <ul style="margin-left: 20px; color: #666;">
+                        <li>安装 Python 3.11、PostgreSQL、Redis、Meilisearch</li>
+                        <li>创建项目目录和虚拟环境</li>
+                        <li>安装所有 Python 依赖</li>
+                        <li>配置 systemd 服务</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h4>配置环境变量</h4>
+                    <pre><code># 编辑环境配置文件
+sudo nano /opt/book_bot_v2/.env</code></pre>
+                    <p>必须配置以下变量：</p>
+                    <pre><code>BOT_TOKEN=your_telegram_bot_token
+BOT_USERNAME=your_bot_username
+DB_PASSWORD=your_secure_db_password
+MEILI_API_KEY=your_meili_master_key</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h4>初始化数据库并启动服务</h4>
+                    <pre><code># 数据库迁移
+cd /opt/book_bot_v2
+./manage.sh migrate
+
+# 启动服务
+sudo systemctl start book_bot_v2
+sudo systemctl start book_bot_v2-worker
+
+# 查看状态
+sudo systemctl status book_bot_v2</code></pre>
+                </div>
+            </div>
+
+            <div class="info">
+                <strong>💡 提示</strong><br>
+                部署完成后，可以通过 <code>sudo journalctl -u book_bot_v2 -f</code> 查看实时日志。
+            </div>
+        </div>
+
+        <div id="deploy" class="section">
+            <h2><span class="icon">📖</span> 详细部署教程</h2>
+
+            <h3>方式一：自动部署 (推荐)</h3>
+            <p>适合快速部署，自动完成所有配置。</p>
+            <div class="command">
+                sudo bash deploy.sh
+            </div>
+
+            <h3>方式二：手动部署</h3>
+            <p>适合需要精细控制的高级用户。</p>
+
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h4>安装系统依赖</h4>
+                    <pre><code># 更新系统
+sudo apt update && sudo apt upgrade -y
+
+# 安装 Python 3.11
+sudo apt install -y python3.11 python3.11-venv python3-pip
+
+# 安装 PostgreSQL
+sudo apt install -y postgresql postgresql-contrib
+
+# 安装 Redis
+sudo apt install -y redis-server
+
+# 其他依赖
+sudo apt install -y git build-essential libpq-dev</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h4>安装 Meilisearch</h4>
+                    <pre><code># 下载 Meilisearch
+curl -L https://install.meilisearch.com | sh
+
+# 移动到系统目录
+sudo mv meilisearch /usr/local/bin/
+
+# 创建 systemd 服务
+sudo tee /etc/systemd/system/meilisearch.service > /dev/null << EOF
+[Unit]
+Description=Meilisearch
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/meilisearch --master-key YOUR_MASTER_KEY
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl enable meilisearch
+sudo systemctl start meilisearch</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h4>配置数据库</h4>
+                    <pre><code># 启动 PostgreSQL
+sudo systemctl start postgresql
+
+# 创建数据库和用户
+sudo -u postgres psql << EOF
+CREATE DATABASE bookbot_v2;
+CREATE USER bookbot WITH PASSWORD 'your_secure_password';
+GRANT ALL PRIVILEGES ON DATABASE bookbot_v2 TO bookbot;
+\q
+EOF</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <h4>部署项目</h4>
+                    <pre><code># 克隆项目
+git clone https://github.com/yourusername/book_bot_v2.git /opt/book_bot_v2
+cd /opt/book_bot_v2
+
+# 创建虚拟环境
+python3.11 -m venv venv
+source venv/bin/activate
+
+# 安装依赖
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# 创建环境文件
+cp .env.example .env
+nano .env  # 编辑配置</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">5</div>
+                <div class="step-content">
+                    <h4>运行迁移并启动服务</h4>
+                    <pre><code># 数据库迁移
+alembic upgrade head
+
+# 创建日志目录
+mkdir -p logs
+
+# 测试运行
+python run_bot.py</code></pre>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">6</div>
+                <div class="step-content">
+                    <h4>配置 Systemd 服务</h4>
+                    <pre><code># 创建 Bot 服务
+sudo tee /etc/systemd/system/book_bot_v2.service > /dev/null << EOF
+[Unit]
+Description=搜书神器 V2 - Telegram Bot
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/book_bot_v2
+Environment=PATH=/opt/book_bot_v2/venv/bin
+ExecStart=/opt/book_bot_v2/venv/bin/python run_bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 创建 Worker 服务
+sudo tee /etc/systemd/system/book_bot_v2-worker.service > /dev/null << EOF
+[Unit]
+Description=搜书神器 V2 - Background Worker
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/book_bot_v2
+Environment=PATH=/opt/book_bot_v2/venv/bin
+ExecStart=/opt/book_bot_v2/venv/bin/python -m app.worker
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 启动服务
+sudo systemctl daemon-reload
+sudo systemctl enable book_bot_v2 book_bot_v2-worker
+sudo systemctl start book_bot_v2 book_bot_v2-worker
+
+# 查看状态
+sudo systemctl status book_bot_v2</code></pre>
+                </div>
+            </div>
+
+            <h3>常用命令</h3>
+            <pre><code># 查看日志
+sudo journalctl -u book_bot_v2 -f
+
+# 重启服务
+sudo systemctl restart book_bot_v2
+
+# 停止服务
+sudo systemctl stop book_bot_v2
+
+# 查看状态
+sudo systemctl status book_bot_v2</code></pre>
+
+            <div class="info">
+                <strong>💡 提示</strong><br>
+                部署完成后，在 Telegram 中搜索你的 Bot 用户名，发送 <code>/start</code> 命令测试是否正常运行。
+            </div>
+        </div>
+
+        <footer>
+            <p>搜书神器 V2 | 完整部署教程</p>
+            <p style="margin-top: 10px;">
+                <a href="index.html">🏠 返回架构首页</a>
+            </p>
+            <p style="margin-top: 20px; font-size: 0.9em; opacity: 0.8;">
+                © 2024 搜书神器 | 基于 MIT 协议开源
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

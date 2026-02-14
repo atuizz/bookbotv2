@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>搜书神器 V2 - 项目架构图</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        /* 架构图主容器 */
+        .architecture-diagram {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin-bottom: 30px;
+        }
+
+        .diagram-title {
+            text-align: center;
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 30px;
+            font-weight: 600;
+        }
+
+        /* 用户层 */
+        .layer {
+            margin-bottom: 30px;
+        }
+
+        .layer-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .layer-icon {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+
+        .layer-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .layer-desc {
+            color: #666;
+            font-size: 0.9em;
+            margin-left: auto;
+        }
+
+        /* 组件网格 */
+        .components-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .component-box {
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .component-box:hover {
+            border-color: #667eea;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
+        }
+
+        .component-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .component-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .component-tech {
+            font-size: 0.85em;
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .component-desc {
+            font-size: 0.8em;
+            color: #666;
+            margin-top: 8px;
+        }
+
+        /* 连接线 */
+        .connection-line {
+            text-align: center;
+            padding: 10px 0;
+            font-size: 1.5em;
+            color: #ccc;
+        }
+
+        /* 图例 */
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+        }
+
+        .legend-color.completed {
+            background: #52c41a;
+        }
+
+        .legend-color.pending {
+            background: #faad14;
+        }
+
+        /* 进度说明 */
+        .progress-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .progress-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .progress-percentage {
+            font-size: 2em;
+            font-weight: bold;
+            color: #52c41a;
+        }
+
+        .progress-bar {
+            height: 12px;
+            background: #f0f0f0;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #52c41a 0%, #73d13d 100%);
+            border-radius: 6px;
+            transition: width 0.5s ease;
+        }
+
+        .progress-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .progress-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid #52c41a;
+        }
+
+        .progress-card.pending {
+            border-left-color: #faad14;
+        }
+
+        .progress-card h4 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .progress-card ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .progress-card li {
+            margin: 5px 0;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+
+        .status-badge.completed {
+            background: #f6ffed;
+            color: #52c41a;
+        }
+
+        .status-badge.pending {
+            background: #fffbe6;
+            color: #faad14;
+        }
+
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: white;
+            opacity: 0.9;
+        }
+
+        footer a {
+            color: white;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📚 搜书神器 V2</h1>
+        <p>项目架构可视化与完成度说明</p>
+    </div>
+
+    <div class="container">
+        <!-- 架构图 -->
+        <div class="architecture-diagram">
+            <div class="diagram-title">🏗️ 系统架构图</div>
+
+            <!-- 用户层 -->
+            <div class="layer">
+                <div class="layer-header">
+                    <span class="layer-icon">👤</span>
+                    <span class="layer-title">用户层</span>
+                    <span class="layer-desc">Telegram 用户交互</span>
+                </div>
+                <div class="components-grid">
+                    <div class="component-box">
+                        <div class="component-icon">💬</div>
+                        <div class="component-name">Telegram Bot</div>
+                        <div class="component-tech">aiogram 3.x</div>
+                        <div class="component-desc">用户交互入口</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connection-line">⬇️</div>
+
+            <!-- 接入层 -->
+            <div class="layer">
+                <div class="layer-header">
+                    <span class="layer-icon">🌐</span>
+                    <span class="layer-title">接入层</span>
+                    <span class="layer-desc">请求处理与路由</span>
+                </div>
+                <div class="components-grid">
+                    <div class="component-box">
+                        <div class="component-icon">🔍</div>
+                        <div class="component-name">搜索处理器</div>
+                        <div class="component-tech">/s 命令</div>
+                        <div class="component-desc">书籍搜索、筛选、分页</div>
+                    </div>
+                    <div class="component-box">
+                        <div class="component-icon">📤</div>
+                        <div class="component-name">上传处理器</div>
+                        <div class="component-tech">Document</div>
+                        <div class="component-desc">文件上传、校验、奖励</div>
+                    </div>
+                    <div class="component-box">
+                        <div class="component-icon">👤</div>
+                        <div class="component-name">用户处理器</div>
+                        <div class="component-tech">/me /coins</div>
+                        <div class="component-desc">个人中心、书币、收藏</div>
+                    </div>
+                    <div class="component-box">
+                        <div class="component-icon">⚙️</div>
+                        <div class="component-name">通用处理器</div>
+                        <div class="component-tech">/start /help</div>
+                        <div class="component-desc">基础命令、帮助信息</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connection-line">⬇️</div>
+
+            <!-- 服务层 -->
+            <div class="layer">
+                <div class="layer-header">
+                    <span class="layer-icon">⚙️</span>
+                    <span class="layer-title">服务层</span>
+                    <span class="layer-desc">业务逻辑与数据处理</span>
+                </div>
+                <div class="components-grid">
+                    <div class="component-box">
+                        <div class="component-icon">🔎</div>
+                        <div class="component-name">搜索服务</div>
+                        <div class="component-tech">Meilisearch</div>
+                        <div class="component-desc">全文检索、筛选、排序</div>
+                    </div>
+                    <div class="component-box">
+                        <div class="component-icon">📋</div>
+                        <div class="component-name">任务队列</div>
+                        <div class="component-tech">arq + Redis</div>
+                        <div class="component-desc">异步任务处理</div>
+                    </div>
+                    <div class="component-box">
+                        <div class="component-icon">🗄️</div>
+                        <div class="component-name">数据库</div>
+                        <div class="component-tech">PostgreSQL</div>
+                        <div class="component-desc">SQLAlchemy 2.0 Async</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="connection-line">⬇️</div>
+
+            <!-- 基础设施层 -->
+            <div class="layer">
+                <div class="layer-header">
+                    <span class="layer-icon">🏗️</span>
+                    <span class="layer-title">基础设施层</span>
+                    <span class="layer-desc">系统部署与运维</span>
+                </div>
+                <div class="components-grid">
+                    <div class="component-box">
+                        <div class="component-icon">🐧</div>
+                        <div class="component-name">操作系统</div>
+                        <div class="component-tech">Ubuntu 22.04</div>
+                        <div class="component-desc">Linux 服务器</div>
+                    </div>
+                    <div class="component-box">
+                        <div class="component-icon">🔄</div>
+                        <div class="component-name">进程管理</div>
+                        <div class="component-tech">systemd</div>
+                        <div class="component-desc">服务守护</div>
+                    </div>
+                    <div class="component-box">
+                        <div class="component-icon">📊</div>
+                        <div class="component-name">日志监控</div>
+                        <div class="component-tech">journald</div>
+                        <div class="component-desc">日志管理</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color completed"></div>
+                    <span>已完成 (95%)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color pending"></div>
+                    <span>待开发 (5%)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 完成度说明 -->
+        <div class="progress-section">
+            <div class="progress-header">
+                <span class="progress-title">📊 项目完成度详情</span>
+                <span class="progress-percentage">95%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 95%"></div>
+            </div>
+
+            <div class="progress-grid">
+                <div class="progress-card">
+                    <h4>✅ 已完成 (95%)</h4>
+                    <ul>
+                        <li>基础设施层 (manage.sh, deploy.sh)</li>
+                        <li>数据层 (Models, Database, Config)</li>
+                        <li>核心服务层 (Search, Worker, Logger)</li>
+                        <li>处理器层 (搜索、上传、用户、通用)</li>
+                        <li>测试套件 (46个测试用例)</li>
+                        <li>部署脚本与文档</li>
+                    </ul>
+                    <span class="status-badge completed">已完成</span>
+                </div>
+                <div class="progress-card pending">
+                    <h4>📝 待开发 (5%)</h4>
+                    <ul>
+                        <li>下载处理器 (/d 命令)</li>
+                        <li>管理员面板 (FastAPI)</li>
+                        <li>统计报表与数据分析</li>
+                        <li>CI/CD 流程 (GitHub Actions)</li>
+                        <li>Docker 容器化部署</li>
+                        <li>多语言国际化支持</li>
+                    </ul>
+                    <span class="status-badge pending">可选增强</span>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>搜书神器 V2 | 项目架构可视化</p>
+            <p style="margin-top: 10px;">
+                <a href="index.html">🏠 项目架构</a> |
+                <a href="deploy.html">📖 部署教程</a>
+            </p>
+        </footer>
+    </div>
+</body>
+</html>

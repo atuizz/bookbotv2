@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>搜书神器 V2 - 系统架构流程图</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.98);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 3px solid #0088cc;
+        }
+
+        h1 {
+            font-size: 2.2em;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .tips {
+            background: #e3f2fd;
+            border-left: 4px solid #0088cc;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+            color: #0d47a1;
+            font-size: 0.95em;
+        }
+
+        .mermaid {
+            background: #fafafa;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            h1 {
+                font-size: 1.6em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>搜书神器 V2 - 系统逻辑架构图</h1>
+            <div class="subtitle">数据流向与组件关系全景图</div>
+        </header>
+
+        <div class="tips">
+            💡 <strong>提示：</strong>此图展示了从用户搜索/上传到多重备份的完整数据流向，包含7个主要步骤。
+        </div>
+
+        <div class="mermaid">
+flowchart TD
+    User(("👤 用户\nUser"))
+    Admin(("🔧 管理员\nAdmin"))
+
+    subgraph Core["🤖 核心服务集群"]
+        TG_API["📡 Telegram Bot API"]
+        Bot["🤖 Bot Core / Aiogram"]
+        Celery["⚡ Celery Worker"]
+    end
+
+    subgraph Data["💾 数据持久层"]
+        Redis["🔄 Redis 缓存/队列"]
+        PG["🗄️ PostgreSQL"]
+        Meili["🔍 Meilisearch"]
+    end
+
+    subgraph Backup["📦 备份与存储"]
+        Main["📢 主频道/群组"]
+        BackupCh["🔒 私有备份频道"]
+        S3["☁️ S3 预留接口"]
+    end
+
+    %% 用户操作流程
+    User -->|"1️⃣ 搜索 /s"| TG_API
+    User -->|"2️⃣ 上传文件"| TG_API
+    TG_API <-->|"Webhook"| Bot
+
+    Admin -->|"Web 后台"| Bot
+    Admin -->|"/admin"| Bot
+
+    %% Bot 内部处理
+    Bot -->|"读写"| Redis
+    Bot -->|"全文检索"| Meili
+    Bot -->|"元数据"| PG
+
+    Bot -->|"3️⃣ 文件入队"| Redis
+    Redis -->|"消费任务"| Celery
+
+    %% Worker 处理流程
+    Celery -->|"4️⃣ 去重 SHA256"| PG
+    Celery -->|"5️⃣ 混合打标"| Meili
+    Celery -->|"6️⃣ 转发备份"| BackupCh
+    Celery -->|"7️⃣ 完成通知"| User
+
+    %% 备份流
+    BackupCh -.->|"记录 File_ID"| PG
+    BackupCh -.->|"冷备份"| S3
+
+    %% 样式
+    classDef user fill:#fff3e0,stroke:#ef6c00,stroke-width:3px
+    classDef admin fill:#fce4ec,stroke:#c2185b,stroke-width:3px
+    classDef core fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef data fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef backup fill:#fff8e1,stroke:#f57c00,stroke-width:2px
+
+    class User user
+    class Admin admin
+    class TG_API,Bot,Celery core
+    class Redis,PG,Meili data
+    class Main,BackupCh,S3 backup
+        </div>
+
+        <footer>
+            <p>📚 搜书神器 V2 | 系统逻辑架构图</p>
+            <p>项目状态: 生产就绪 | 功能完成度: 95%</p>
+            <p style="margin-top: 10px;">© 2024 搜书神器. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'base',
+            securityLevel: 'loose'
+        });
+    </script>
+</body>
+</html>

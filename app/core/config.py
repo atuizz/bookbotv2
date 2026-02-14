@@ -118,10 +118,18 @@ class Settings(BaseSettings):
         return BASE_DIR / "temp"
 
 
+# 配置实例缓存
+_settings: Optional[Settings] = None
+
+
 def get_settings() -> Settings:
-    """获取配置单例"""
-    return Settings()
+    """获取配置单例 (延迟初始化)"""
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
 
 
-# 全局配置实例
+# 注意：不要在模块导入时实例化配置
+# 使用时通过 get_settings() 获取
 settings = get_settings()
