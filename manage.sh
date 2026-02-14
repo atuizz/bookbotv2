@@ -15,7 +15,13 @@ NC='\033[0m' # No Color
 # 项目配置
 PROJECT_NAME="bookbot"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="$PROJECT_DIR/.venv"
+if [[ -d "$PROJECT_DIR/.venv" ]]; then
+    VENV_DIR="$PROJECT_DIR/.venv"
+elif [[ -d "$PROJECT_DIR/venv" ]]; then
+    VENV_DIR="$PROJECT_DIR/venv"
+else
+    VENV_DIR="$PROJECT_DIR/.venv"
+fi
 PYTHON="$VENV_DIR/bin/python"
 SYSTEMD_DIR="/etc/systemd/system"
 
@@ -233,7 +239,7 @@ User=$USER
 WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$VENV_DIR/bin:/usr/local/bin:/usr/bin
 EnvironmentFile=$PROJECT_DIR/.env
-ExecStart=$PYTHON -m app.worker
+ExecStart=$VENV_DIR/bin/arq app.worker.WorkerSettings
 Restart=always
 RestartSec=10
 
@@ -257,7 +263,7 @@ cmd_health() {
 
     # 检查虚拟环境
     if [[ -d "$VENV_DIR" ]]; then
-        log_success "虚拟环境已就绪"
+        log_success "虚拟环境已就绪: $VENV_DIR"
     else
         log_error "虚拟环境不存在"
     fi
@@ -286,7 +292,7 @@ cmd_help() {
 用法: ./manage.sh <命令> [参数]
 
 命令:
-  install          安装环境（创建venv、安装依赖）
+  install          安装环境（创建虚拟环境、安装依赖）
   migrate          执行数据库迁移和索引初始化
   start-bot        启动 Telegram Bot
   start-worker     启动任务队列 Worker

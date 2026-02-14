@@ -54,18 +54,34 @@
 
 ## 📦 快速开始
 
-### 方式一：自动部署（推荐）
+### 方式一：一键部署（推荐）
+
+使用以下命令即可自动完成环境安装、代码下载和配置：
 
 ```bash
-# 1. 克隆项目
-git clone https://github.com/yourusername/book_bot_v2.git
-cd book_bot_v2
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/atuizz/bookbotv2/master/install.sh)"
+```
 
-# 2. 运行部署脚本
-sudo bash deploy.sh
+该脚本会自动：
+1. 检查并安装系统依赖 (Python 3.11, Redis, PostgreSQL, Meilisearch)
+2. 自动从 GitHub 克隆/更新代码
+3. 创建虚拟环境并安装项目依赖
+4. 自动配置数据库和搜索引擎
+5. 配置 systemd 服务实现开机自启
+6. 引导设置 Bot Token
 
-# 3. 编辑配置文件
-sudo nano /opt/book_bot_v2/.env
+### 方式二：手动部署
+
+1. 克隆项目
+```bash
+git clone https://github.com/atuizz/bookbotv2.git
+cd bookbotv2
+```
+
+2. 运行管理脚本
+```bash
+./manage.sh install
+```
 
 # 4. 初始化数据库
 sudo systemctl start postgresql
@@ -169,8 +185,8 @@ git clone https://github.com/yourusername/book_bot_v2.git /opt/book_bot_v2
 cd /opt/book_bot_v2
 
 # 创建虚拟环境
-python3.11 -m venv venv
-source venv/bin/activate
+python3.11 -m venv .venv
+source .venv/bin/activate
 
 # 安装依赖
 pip install --upgrade pip setuptools wheel
@@ -203,8 +219,8 @@ After=network.target postgresql.service redis.service meilisearch.service
 Type=simple
 User=root
 WorkingDirectory=/opt/book_bot_v2
-Environment=PATH=/opt/book_bot_v2/venv/bin
-ExecStart=/opt/book_bot_v2/venv/bin/python run_bot.py
+Environment=PATH=/opt/book_bot_v2/.venv/bin
+ExecStart=/opt/book_bot_v2/.venv/bin/python run_bot.py
 Restart=always
 RestartSec=10
 StandardOutput=append:/opt/book_bot_v2/logs/bot.log
@@ -224,8 +240,8 @@ After=network.target postgresql.service redis.service
 Type=simple
 User=root
 WorkingDirectory=/opt/book_bot_v2
-Environment=PATH=/opt/book_bot_v2/venv/bin
-ExecStart=/opt/book_bot_v2/venv/bin/python -m app.worker
+Environment=PATH=/opt/book_bot_v2/.venv/bin
+ExecStart=/opt/book_bot_v2/.venv/bin/arq app.worker.WorkerSettings
 Restart=always
 RestartSec=10
 StandardOutput=append:/opt/book_bot_v2/logs/worker.log
@@ -282,7 +298,7 @@ book_bot_v2/
 │   └── test_upload.py
 ├── logs/                    # 日志目录
 ├── data/                    # 数据目录
-├── venv/                    # 虚拟环境
+├── .venv/                   # 虚拟环境
 ├── .env                     # 环境变量
 ├── .env.example             # 环境变量示例
 ├── requirements.txt         # 依赖列表

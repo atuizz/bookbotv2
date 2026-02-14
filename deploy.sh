@@ -127,7 +127,7 @@ deploy_project() {
     print_info "复制项目文件到: $PROJECT_DIR"
 
     # 使用rsync或cp复制文件
-    rsync -av --exclude='.git' --exclude='__pycache__' --exclude='venv' \
+    rsync -av --exclude='.git' --exclude='__pycache__' --exclude='venv' --exclude='.venv' \
         . "$PROJECT_DIR/" 2>/dev/null || {
         # 如果rsync失败，使用cp
         cp -r app "$PROJECT_DIR/"
@@ -147,10 +147,10 @@ setup_venv() {
     cd "$PROJECT_DIR"
 
     # 创建虚拟环境
-    python3.11 -m venv venv
+    python3.11 -m venv .venv
 
     # 激活虚拟环境并安装依赖
-    source venv/bin/activate
+    source .venv/bin/activate
 
     # 升级pip
     pip install --upgrade pip setuptools wheel
@@ -177,8 +177,8 @@ After=network.target postgresql.service redis.service
 Type=simple
 User=root
 WorkingDirectory=${PROJECT_DIR}
-Environment=PATH=${PROJECT_DIR}/venv/bin
-ExecStart=${PROJECT_DIR}/venv/bin/python run_bot.py
+Environment=PATH=${PROJECT_DIR}/.venv/bin
+ExecStart=${PROJECT_DIR}/.venv/bin/python run_bot.py
 Restart=always
 RestartSec=10
 StandardOutput=append:${PROJECT_DIR}/logs/bot.log
@@ -198,8 +198,8 @@ After=network.target postgresql.service redis.service
 Type=simple
 User=root
 WorkingDirectory=${PROJECT_DIR}
-Environment=PATH=${PROJECT_DIR}/venv/bin
-ExecStart=${PROJECT_DIR}/venv/bin/python -m app.worker
+Environment=PATH=${PROJECT_DIR}/.venv/bin
+ExecStart=${PROJECT_DIR}/.venv/bin/arq app.worker.WorkerSettings
 Restart=always
 RestartSec=10
 StandardOutput=append:${PROJECT_DIR}/logs/worker.log

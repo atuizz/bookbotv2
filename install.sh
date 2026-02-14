@@ -270,7 +270,7 @@ DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=bookbot_v2
 DB_USER=bookbot
-DB_PASSWORD=$DB_PASSWORD
+DB_PASSWORD=password
 
 # Redis 配置
 REDIS_URL=redis://localhost:6379/0
