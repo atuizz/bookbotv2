@@ -121,6 +121,7 @@ apt-get install -y -qq \
     git \
     curl \
     wget \
+    sudo \
     nano \
     htop \
     tree \
@@ -266,6 +267,10 @@ else
     if [[ $HAS_SYSTEMD -eq 1 ]]; then
         info "启动 Redis 服务..."
         systemctl stop redis-server || true
+        # 清理可能存在的 PID 文件，防止启动失败
+        rm -f /var/run/redis/redis-server.pid
+        rm -f /run/redis/redis-server.pid
+        
         systemctl enable redis-server || true
         if ! systemctl start redis-server; then
             warn "Redis 服务启动失败，尝试重启..."
@@ -321,8 +326,8 @@ mkdir -p "$PROJECT_DIR"/{app/{handlers,services,core,models},tests,logs,data,doc
 # 检查本地项目文件
 if [[ -f "run_bot.py" ]]; then
     info "发现本地项目文件，正在复制..."
-    cp -r app tests *.py *.txt *.sh "$PROJECT_DIR/" 2>/dev/null || true
-    cp -r docs "$PROJECT_DIR/" 2>/dev/null || true
+    cp -a app tests *.py *.txt *.sh "$PROJECT_DIR/" 2>/dev/null || true
+    cp -a docs "$PROJECT_DIR/" 2>/dev/null || true
     success "项目文件复制完成"
 else
     info "未找到本地项目文件，尝试从 GitHub 下载..."
@@ -369,16 +374,16 @@ info "激活虚拟环境并安装依赖..."
 source .venv/bin/activate
 
 # 升级pip
-pip install --upgrade pip setuptools wheel -q
+pip install --upgrade pip setuptools wheel -q --no-cache-dir
 
 # 安装依赖
 if [[ -f "requirements.txt" ]]; then
     info "安装项目依赖..."
-    pip install -r requirements.txt -q
+    pip install -r requirements.txt -q --no-cache-dir
 else
     warn "未找到 requirements.txt"
     info "安装基础依赖..."
-    pip install aiogram python-telegram-bot sqlalchemy asyncpg redis meilisearch python-dotenv -q
+    pip install aiogram python-telegram-bot sqlalchemy asyncpg redis meilisearch python-dotenv -q --no-cache-dir
 fi
 
 success "虚拟环境创建完成"
@@ -530,29 +535,59 @@ if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet postgresql; then
         DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
         sudo -u postgres psql -c "CREATE USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';"
     fi
+    
+    # 修复 pg_hba.conf 认证策略 (添加信任规则)
+    PG_HBA_FILE=$(sudo -u postgres psql -tAc "SHOW hba_file")
+    if [[ -n "$PG_HBA_FILE" && -f "$PG_HBA_FILE" ]]; then
+        info "优化 PostgreSQL 认证策略 (针对 ${DB_USER_EFFECTIVE})..."
+        # 检查是否已存在规则
+        if ! grep -q "^host\s\+all\s\+${DB_USER_EFFECTIVE}\s\+127\.0\.0\.1\/32\s\+trust" "$PG_HBA_FILE"; then
+            info "添加 ${DB_USER_EFFECTIVE} 的本地信任规则..."
+            # 备份
+            cp "$PG_HBA_FILE" "${PG_HBA_FILE}.bak_$(date +%s)"
+            
+            # 创建临时文件包含新规则
+            echo "host    all             ${DB_USER_EFFECTIVE}             127.0.0.1/32            trust" > pg_hba_patch.tmp
+            
+            # 将新规则插入到文件最前面 (确保优先级)
+            cat pg_hba_patch.tmp "$PG_HBA_FILE" > "$PG_HBA_FILE.new"
+            mv "$PG_HBA_FILE.new" "$PG_HBA_FILE"
+            
+            # 修复权限
+            if id "postgres" &>/dev/null; then
+                chown postgres:postgres "$PG_HBA_FILE"
+            fi
+            rm -f pg_hba_patch.tmp
+            
+            # 重载配置
+            info "重载 PostgreSQL 配置..."
+            if systemctl is-active --quiet postgresql; then
+                systemctl reload postgresql
+            else
+                systemctl start postgresql
+            fi
+            sleep 1
+        else
+            info "信任规则已存在，跳过"
+        fi
+    fi
+
     DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
     sudo -u postgres psql -c "ALTER USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';" || true
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME_EFFECTIVE}'" | grep -q 1; then
         info "创建数据库 ${DB_NAME_EFFECTIVE}..."
         sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME_EFFECTIVE} OWNER ${DB_USER_EFFECTIVE};"
     fi
+    
+    # 验证连接
     if ! PGPASSWORD="${DB_PASSWORD_EFFECTIVE}" psql -h "${DB_HOST_EFFECTIVE}" -p "${DB_PORT_EFFECTIVE}" -U "${DB_USER_EFFECTIVE}" -d "${DB_NAME_EFFECTIVE}" -c "select 1" >/dev/null 2>&1; then
-        warn "检测到数据库连接失败，正在自动修复密码..."
-        DB_PASSWORD_EFFECTIVE="bookbot$(date +%s)${RANDOM}"
-        DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
+        warn "数据库连接初步检查失败，尝试最终修复..."
+        # 再次确认密码
         sudo -u postgres psql -c "ALTER USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';"
-        if grep -q "^DB_PASSWORD=" "$PROJECT_DIR/.env"; then
-            sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=${DB_PASSWORD_EFFECTIVE}/" "$PROJECT_DIR/.env"
-        else
-            echo "DB_PASSWORD=${DB_PASSWORD_EFFECTIVE}" >> "$PROJECT_DIR/.env"
-        fi
-        if grep -q "^DATABASE_URL=" "$PROJECT_DIR/.env"; then
-            sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://${DB_USER_EFFECTIVE}:${DB_PASSWORD_EFFECTIVE}@${DB_HOST_EFFECTIVE}:${DB_PORT_EFFECTIVE}/${DB_NAME_EFFECTIVE}#" "$PROJECT_DIR/.env"
-        else
-            echo "DATABASE_URL=postgresql+asyncpg://${DB_USER_EFFECTIVE}:${DB_PASSWORD_EFFECTIVE}@${DB_HOST_EFFECTIVE}:${DB_PORT_EFFECTIVE}/${DB_NAME_EFFECTIVE}" >> "$PROJECT_DIR/.env"
-        fi
+        
+        # 如果还是失败，可能是端口问题或其他，但有了 trust 规则，通常不会报密码错误
         if ! PGPASSWORD="${DB_PASSWORD_EFFECTIVE}" psql -h "${DB_HOST_EFFECTIVE}" -p "${DB_PORT_EFFECTIVE}" -U "${DB_USER_EFFECTIVE}" -d "${DB_NAME_EFFECTIVE}" -c "select 1" >/dev/null 2>&1; then
-            error "数据库认证仍失败，请检查 PostgreSQL 的认证配置"
+             error "数据库连接验证失败。请检查:\n1. PostgreSQL 服务状态 (systemctl status postgresql)\n2. 端口 ${DB_PORT_EFFECTIVE} 是否正确\n3. pg_hba.conf 是否生效"
         fi
     fi
     success "PostgreSQL 配置完成"
@@ -578,7 +613,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=${SUDO_USER:-root}
 WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/.venv/bin
 ExecStart=$PROJECT_DIR/.venv/bin/python $PROJECT_DIR/run_bot.py
@@ -597,7 +632,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=${SUDO_USER:-root}
 WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/.venv/bin
 ExecStart=$PROJECT_DIR/.venv/bin/arq app.worker.WorkerSettings
@@ -680,6 +715,15 @@ systemctl status book-bot-v2-worker --no-pager | grep "Active:" || true
 echo ""
 
 success "所有服务已启动，您可以开始使用了！"
+
+# 修复项目目录权限 (确保非 root 用户也能操作)
+if [[ -n "$SUDO_USER" ]]; then
+    info "正在修复目录权限 (所有者: $SUDO_USER)..."
+    chown -R "$SUDO_USER":"$SUDO_USER" "$PROJECT_DIR"
+    # 确保 systemd 服务文件仍归 root 所有 (虽然 systemd 会忽略)
+    # 但 .env 必须是 640
+    chmod 640 "$PROJECT_DIR/.env"
+fi
 
 # 清理
 rm -f $0
