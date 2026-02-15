@@ -104,8 +104,15 @@ check_services() {
     if curl -s "${MEILI_HOST:-http://localhost:7700}/health" 2>/dev/null | grep -q "available"; then
         log_success "Meilisearch 运行正常"
     else
-        log_error "Meilisearch 未启动"
-        all_ok=false
+        log_warning "Meilisearch 未响应，尝试重启服务..."
+        sudo systemctl restart meilisearch 2>/dev/null || true
+        sleep 5
+        if curl -s "${MEILI_HOST:-http://localhost:7700}/health" 2>/dev/null | grep -q "available"; then
+            log_success "Meilisearch 重启后运行正常"
+        else
+            log_error "Meilisearch 未启动或无法连接"
+            all_ok=false
+        fi
     fi
 
     if [[ "$all_ok" == false ]]; then

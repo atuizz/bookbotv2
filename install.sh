@@ -241,8 +241,20 @@ EOF
     mkdir -p /var/lib/meilisearch/data
     systemctl daemon-reload
     systemctl enable meilisearch
-    systemctl start meilisearch
-    success "Meilisearch 服务已启动 (Master Key: masterKey)"
+    systemctl restart meilisearch
+    
+    # 等待 Meilisearch 启动
+    info "等待 Meilisearch 启动..."
+    for i in {1..30}; do
+        if curl -s "http://localhost:7700/health" | grep -q "available"; then
+            success "Meilisearch 服务已就绪 (Master Key: masterKey)"
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            warn "Meilisearch 启动超时，但将尝试继续..."
+        fi
+        sleep 1
+    done
 elif [[ $HAS_SYSTEMD -eq 0 ]]; then
     warn "检测到非 systemd 环境，跳过 Meilisearch 服务配置"
 fi
