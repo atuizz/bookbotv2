@@ -225,18 +225,17 @@ def build_search_keyboard(
 
     keyboard = []
 
-    # 分页按钮 (最多10个)
+    # 结果按钮 (最多10个，按钮文案保持 1..N，但回调携带 book_id)
     start_idx = (page - 1) * per_page + 1
-    end_idx = min(start_idx + len(response.hits) - 1, total)
 
-    # 为每个结果创建一个按钮
-    BUTTONS_PER_ROW = 5  # 每行按钮数量
-    row1 = []
-    row2 = []
-    for idx, i in enumerate(range(start_idx, end_idx + 1)):
+    BUTTONS_PER_ROW = 5
+    row1: List[InlineKeyboardButton] = []
+    row2: List[InlineKeyboardButton] = []
+    for idx, book in enumerate(response.hits):
+        display_no = start_idx + idx
         btn = InlineKeyboardButton(
-            text=str(i),
-            callback_data=f"book:view:{i}"
+            text=str(display_no),
+            callback_data=f"book:detail:{book.id}",
         )
         if idx < BUTTONS_PER_ROW:
             row1.append(btn)
@@ -683,27 +682,3 @@ async def perform_search_edit(
             f"请稍后再试或联系管理员"
         )
 
-
-# ============================================================================
-# 书籍详情回调 (预留，后续实现)
-# ============================================================================
-
-@search_router.callback_query(F.data.startswith("book:"))
-async def on_book_callback(callback: CallbackQuery):
-    """处理书籍相关的回调"""
-    data = callback.data
-    parts = data.split(":")
-
-    if len(parts) < 2:
-        await callback.answer("无效的回调数据")
-        return
-
-    action = parts[1]
-
-    if action == "view":
-        # 查看书籍详情 - 预留接口
-        book_idx = parts[2] if len(parts) > 2 else "?"
-        await callback.answer(f"正在查看第 {book_idx} 本书的详情...")
-        # TODO: 实现书籍详情显示
-    else:
-        await callback.answer(f"未知操作: {action}")

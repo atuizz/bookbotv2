@@ -9,6 +9,9 @@ from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 
 from app.core.logger import logger
+from app.core.database import get_session_factory
+from app.core.models import User
+from sqlalchemy import select
 
 common_router = Router(name="common")
 
@@ -16,6 +19,26 @@ common_router = Router(name="common")
 @common_router.message(Command("start"))
 async def cmd_start(message: Message):
     """处理 /start 命令"""
+    tg_user = message.from_user
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(User).where(User.id == tg_user.id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                id=tg_user.id,
+                username=tg_user.username,
+                first_name=tg_user.first_name,
+                last_name=tg_user.last_name,
+                coins=0,
+                upload_count=0,
+                download_count=0,
+                search_count=0,
+            )
+            session.add(user)
+            await session.commit()
+
     welcome_text = f"""
 👋 欢迎使用 <b>搜书神器 V2</b>!
 

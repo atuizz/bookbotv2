@@ -9,6 +9,11 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 
 from app.core.logger import logger
+from app.core.database import get_session_factory
+from app.core.models import User, Favorite, Book, DownloadLog
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 user_router = Router(name="user")
 
@@ -16,35 +21,47 @@ user_router = Router(name="user")
 @user_router.message(Command("me"))
 async def cmd_me(message: Message):
     """个人中心 - 显示用户信息"""
-    user = message.from_user
+    tg_user = message.from_user
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(User).where(User.id == tg_user.id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                id=tg_user.id,
+                username=tg_user.username,
+                first_name=tg_user.first_name,
+                last_name=tg_user.last_name,
+                coins=0,
+                upload_count=0,
+                download_count=0,
+                search_count=0,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
 
-    # TODO: 从数据库获取用户完整信息
-    # 演示数据
-    user_stats = {
-        "coins": 100,
-        "uploads": 5,
-        "downloads": 20,
-        "favorites": 8,
-        "joined_date": "2024-01-01",
-        "level": "普通用户",
-    }
+        fav_count = await session.scalar(
+            select(func.count()).select_from(Favorite).where(Favorite.user_id == user.id)
+        )
 
     text = f"""
 👤 <b>个人中心</b>
 
 📝 <b>基本信息</b>
-├ 用户名: <code>{user.username or '未设置'}</code>
-├ 用户ID: <code>{user.id}</code>
-└ 注册时间: {user_stats['joined_date']}
+├ 用户名: <code>{tg_user.username or '未设置'}</code>
+├ 用户ID: <code>{tg_user.id}</code>
+└ 注册时间: {user.created_at.strftime('%Y-%m-%d') if user.created_at else '未知'}
 
 💰 <b>账户信息</b>
-├ 书币余额: <code>{user_stats['coins']} 🪙</code>
-└ 等级: <code>{user_stats['level']}</code>
+├ 书币余额: <code>{user.coins} 🪙</code>
+└ 等级: <code>{user.level.value}</code>
 
 📊 <b>数据统计</b>
-├ 上传书籍: <code>{user_stats['uploads']} 本</code>
-├ 下载书籍: <code>{user_stats['downloads']} 本</code>
-└ 收藏书籍: <code>{user_stats['favorites']} 本</code>
+├ 上传书籍: <code>{user.upload_count} 本</code>
+├ 下载书籍: <code>{user.download_count} 本</code>
+└ 收藏书籍: <code>{fav_count or 0} 本</code>
 
 💡 <b>提示:</b>
 • 上传书籍可获得书币奖励
@@ -58,16 +75,32 @@ async def cmd_me(message: Message):
 @user_router.message(Command("coins"))
 async def cmd_coins(message: Message):
     """查看书币余额"""
-    user = message.from_user
-
-    # TODO: 从数据库获取真实余额
-    coins = 100  # 演示数据
+    tg_user = message.from_user
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(User).where(User.id == tg_user.id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                id=tg_user.id,
+                username=tg_user.username,
+                first_name=tg_user.first_name,
+                last_name=tg_user.last_name,
+                coins=0,
+                upload_count=0,
+                download_count=0,
+                search_count=0,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
 
     text = f"""
 💰 <b>书币余额</b>
 
-用户: <code>{user.username or user.full_name}</code>
-余额: <code>{coins} 🪙</code>
+用户: <code>{tg_user.username or tg_user.full_name}</code>
+余额: <code>{user.coins} 🪙</code>
 
 📖 <b>书币用途:</b>
 • 下载高质量书籍
@@ -87,14 +120,28 @@ async def cmd_coins(message: Message):
 @user_router.message(Command("fav"))
 async def cmd_favorites(message: Message):
     """查看收藏列表"""
-    user = message.from_user
+    tg_user = message.from_user
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(User).where(User.id == tg_user.id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            await message.answer(
+                "📚 <b>我的收藏</b>\n\n"
+                "您还没有注册记录，请先发送 /start"
+            )
+            return
 
-    # TODO: 从数据库获取真实收藏列表
-    # 演示数据
-    favorites = [
-        {"id": 1, "title": "示例书籍1", "author": "作者A", "added_date": "2024-01-15"},
-        {"id": 2, "title": "示例书籍2", "author": "作者B", "added_date": "2024-01-14"},
-    ]
+        stmt = (
+            select(Favorite)
+            .where(Favorite.user_id == user.id)
+            .order_by(Favorite.created_at.desc())
+            .options(selectinload(Favorite.book))
+            .limit(20)
+        )
+        result = await session.execute(stmt)
+        favorites = result.scalars().all()
 
     if not favorites:
         await message.answer(
@@ -106,25 +153,89 @@ async def cmd_favorites(message: Message):
 
     lines = [
         "📚 <b>我的收藏</b>",
-        f"共 <code>{len(favorites)}</code> 本书籍\n",
+        f"共 <code>{len(favorites)}</code> 本书籍（最多显示20本）\n",
     ]
 
-    for i, book in enumerate(favorites, 1):
-        lines.append(f"{i}. <b>{book['title']}</b>")
-        lines.append(f"   👤 {book['author']} | 📅 {book['added_date']}")
+    keyboard_rows: list[list[InlineKeyboardButton]] = []
+    current_row: list[InlineKeyboardButton] = []
+    for i, fav in enumerate(favorites, 1):
+        book = fav.book
+        if not book:
+            continue
+        lines.append(f"{i}. <b>{book.title}</b>")
+        lines.append(f"   👤 {book.author} | 📅 {fav.created_at.strftime('%Y-%m-%d') if fav.created_at else '未知'}")
         lines.append("")
 
-    lines.append("💡 点击书籍编号可查看详情或下载")
+        current_row.append(
+            InlineKeyboardButton(text=str(i), callback_data=f"book:detail:{book.id}")
+        )
+        if len(current_row) == 5:
+            keyboard_rows.append(current_row)
+            current_row = []
+    if current_row:
+        keyboard_rows.append(current_row)
 
-    await message.answer("\n".join(lines))
+    keyboard_rows.append([InlineKeyboardButton(text="❌ 关闭", callback_data="close")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+    await message.answer("\n".join(lines), reply_markup=keyboard)
 
 
 @user_router.message(Command("history"))
 async def cmd_history(message: Message):
     """查看下载历史"""
-    # TODO: 实现下载历史功能
-    await message.answer(
-        "📜 <b>下载历史</b>\n\n"
-        "功能开发中...\n\n"
-        "💡 您可以通过 /s 命令搜索并下载书籍"
-    )
+    tg_user = message.from_user
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = (
+            select(DownloadLog)
+            .where(DownloadLog.user_id == tg_user.id)
+            .order_by(DownloadLog.created_at.desc())
+            .limit(20)
+        )
+        result = await session.execute(stmt)
+        logs = result.scalars().all()
+
+        book_ids = [log.book_id for log in logs]
+        books_by_id: dict[int, Book] = {}
+        if book_ids:
+            result = await session.execute(select(Book).where(Book.id.in_(book_ids)))
+            for book in result.scalars().all():
+                books_by_id[book.id] = book
+
+    if not logs:
+        await message.answer(
+            "📜 <b>下载历史</b>\n\n"
+            "暂无记录。\n\n"
+            "💡 通过 /s 搜索并下载书籍后，这里会显示历史记录。"
+        )
+        return
+
+    lines = [
+        "📜 <b>下载历史</b>",
+        f"共 <code>{len(logs)}</code> 条记录（最多显示20条）\n",
+    ]
+
+    keyboard_rows: list[list[InlineKeyboardButton]] = []
+    current_row: list[InlineKeyboardButton] = []
+    for i, log in enumerate(logs, 1):
+        book = books_by_id.get(log.book_id)
+        title = book.title if book else f"书籍ID {log.book_id}"
+        lines.append(f"{i}. <b>{title}</b>")
+        lines.append(f"   📅 {log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '未知'}")
+        lines.append("")
+
+        if book:
+            current_row.append(
+                InlineKeyboardButton(text=str(i), callback_data=f"book:detail:{book.id}")
+            )
+            if len(current_row) == 5:
+                keyboard_rows.append(current_row)
+                current_row = []
+
+    if current_row:
+        keyboard_rows.append(current_row)
+    keyboard_rows.append([InlineKeyboardButton(text="❌ 关闭", callback_data="close")])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+    await message.answer("\n".join(lines), reply_markup=keyboard)

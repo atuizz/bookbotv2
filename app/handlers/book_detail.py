@@ -9,11 +9,10 @@
 3. 备份服务集成，确保文件可恢复
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional
 from datetime import datetime
 
 from aiogram import Router, F
-from aiogram.filters import Command
 from aiogram.types import (
     Message,
     CallbackQuery,
@@ -23,14 +22,12 @@ from aiogram.types import (
 from aiogram.exceptions import TelegramBadRequest
 
 from app.core.logger import logger
-from app.services.search import get_search_service
-from app.services.backup import get_backup_service
+from app.core.database import get_session_factory
+from app.core.models import Book, File, FileRef, BookTag, Tag, User, Favorite, DownloadLog
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 book_detail_router = Router(name="book_detail")
-
-# 简化的书籍缓存
-_book_cache: Dict[str, Any] = {}
-
 
 def format_size(size_bytes: int) -> str:
     """格式化文件大小"""
@@ -44,40 +41,50 @@ def format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024 * 1024 * 1024):.1f}GB"
 
 
-def format_date(date_str: str) -> str:
+def format_date(dt: Optional[datetime]) -> str:
     """格式化日期"""
+    if not dt:
+        return "未知"
     try:
-        if isinstance(date_str, str):
-            if len(date_str) >= 10:
-                return date_str[:10]
-        return str(date_str)[:10]
-    except:
+        return dt.strftime("%Y/%m/%d %H:%M:%S")
+    except Exception:
         return "未知"
 
 
-async def get_book_by_id(book_id: str):
-    """根据ID获取书籍信息"""
-    # 先从缓存获取
-    if book_id in _book_cache:
-        return _book_cache[book_id]
-
-    # 从搜索服务获取
-    try:
-        search_service = await get_search_service()
-        # 使用ID搜索
-        response = await search_service.search(
-            query=f"id:{book_id}",
-            page=1,
-            per_page=1,
-        )
-        if response.hits:
-            book = response.hits[0]
-            _book_cache[book_id] = book
-            return book
-    except Exception as e:
-        logger.error(f"获取书籍信息失败: {e}")
-
+def pick_primary_file_ref(file_refs: list[FileRef]) -> Optional[FileRef]:
+    for ref in file_refs:
+        if ref.is_active and ref.is_primary and ref.tg_file_id:
+            return ref
+    for ref in file_refs:
+        if ref.is_active and ref.tg_file_id:
+            return ref
     return None
+
+
+def pick_backup_ref(file_refs: list[FileRef]) -> Optional[FileRef]:
+    for ref in file_refs:
+        if ref.is_active and ref.is_backup and ref.channel_id and ref.message_id:
+            return ref
+    for ref in file_refs:
+        if ref.is_active and ref.channel_id and ref.message_id:
+            return ref
+    return None
+
+
+async def get_book_from_db(book_id: int) -> Optional[Book]:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = (
+            select(Book)
+            .where(Book.id == book_id)
+            .options(
+                selectinload(Book.file).selectinload(File.file_refs),
+                selectinload(Book.uploader),
+                selectinload(Book.book_tags).selectinload(BookTag.tag),
+            )
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
 
 
 @book_detail_router.callback_query(F.data.startswith("book:"))
@@ -88,17 +95,21 @@ async def on_book_callback(callback: CallbackQuery):
 
     try:
         if action.startswith("detail:"):
-            book_id = action.replace("detail:", "")
+            book_id = int(action.replace("detail:", ""))
             await show_book_detail(callback, book_id)
         elif action.startswith("download:"):
-            book_id = action.replace("download:", "")
+            book_id = int(action.replace("download:", ""))
             await handle_download(callback, book_id)
         elif action.startswith("fav:"):
-            book_id = action.replace("fav:", "")
+            book_id = int(action.replace("fav:", ""))
             await handle_favorite(callback, book_id)
         elif action.startswith("report:"):
-            book_id = action.replace("report:", "")
+            book_id = int(action.replace("report:", ""))
             await handle_report(callback, book_id)
+        elif action.startswith("review:"):
+            await callback.answer("功能开发中...", show_alert=True)
+        elif action.startswith("share:"):
+            await callback.answer("功能开发中...", show_alert=True)
         else:
             await callback.answer("⚠️ 未知的操作")
     except Exception as e:
@@ -106,7 +117,7 @@ async def on_book_callback(callback: CallbackQuery):
         await callback.answer("❌ 操作失败，请重试")
 
 
-async def show_book_detail(callback: CallbackQuery, book_id: str):
+async def show_book_detail(callback: CallbackQuery, book_id: int):
     """
     显示书籍详情并发送文件
 
@@ -114,68 +125,70 @@ async def show_book_detail(callback: CallbackQuery, book_id: str):
     1. 文件消息 (包含实际的文件附件)
     2. 详情消息 (书籍信息和操作按钮)
     """
-    # 获取书籍信息
-    book = await get_book_by_id(book_id)
+    book = await get_book_from_db(book_id)
 
     if not book:
         await callback.answer("❌ 书籍信息获取失败")
         return
 
-    # 发送文件
+    file_refs = list(book.file.file_refs) if book.file else []
+    primary_ref = pick_primary_file_ref(file_refs)
+    backup_ref = pick_backup_ref(file_refs)
+
     file_sent = False
-    if book.file_id:
+    if primary_ref:
         try:
             await callback.bot.send_document(
                 chat_id=callback.message.chat.id,
-                document=book.file_id,
-                caption=f"📚 {book.title}"
+                document=primary_ref.tg_file_id,
             )
             file_sent = True
         except Exception as e:
             logger.warning(f"直接发送文件失败: {e}")
 
-            # 尝试从备份恢复
-            try:
-                backup_service = await get_backup_service()
-                msg = await backup_service.send_file_to_user(
-                    bot=callback.bot,
-                    sha256_hash=book.file_unique_id or book.file_id,
-                    user_chat_id=callback.message.chat.id,
-                    caption=f"📚 {book.title}"
-                )
-                if msg:
-                    file_sent = True
-            except Exception as e2:
-                logger.error(f"从备份恢复失败: {e2}")
+    if not file_sent and backup_ref and backup_ref.channel_id and backup_ref.message_id:
+        try:
+            await callback.bot.forward_message(
+                chat_id=callback.message.chat.id,
+                from_chat_id=backup_ref.channel_id,
+                message_id=backup_ref.message_id,
+            )
+            file_sent = True
+        except Exception as e:
+            logger.warning(f"从备份频道转发失败: {e}")
 
     # 构建详情文本
-    tags_text = ', '.join(book.tags[:10]) if book.tags else '暂无标签'
-    description = book.description[:200] + '...' if book.description and len(book.description) > 200 else (book.description or '暂无简介')
+    tags = [bt.tag.name for bt in (book.book_tags or []) if bt.tag and bt.tag.name]
+    tags_display = " ".join([f"#{t}" for t in tags[:20]]) if tags else "暂无标签"
+    description = book.description or "暂无简介"
+    if len(description) > 300:
+        description = description[:300] + "..."
 
-    detail_text = f"""📚 <b>{book.title}</b>
+    uploader_name = "未知"
+    if book.uploader:
+        uploader_name = book.uploader.username or f"{book.uploader.first_name}{book.uploader.last_name or ''}".strip() or "未知"
 
-📝 <b>基本信息</b>
-├ 作者: {book.author or '未知'}
-├ 分类: {book.category or '未分类'}
-├ 格式: {book.format.upper() if book.format else '未知'}
-├ 大小: {format_size(book.size) if book.size else '未知'}
-└ 字数: {book.word_count or '未知'}
+    file_format = book.file.format.value if book.file and book.file.format else "未知"
+    file_size = format_size(book.file.size) if book.file else "未知"
+    word_count = book.file.word_count if book.file else 0
 
-⭐ <b>评分信息</b>
-├ 评分: {book.rating_score or 0}/10
-├ 评价数: {book.rating_count or 0} 人
-└ 下载量: {book.download_count or 0} 次
+    display_filename = f"{book.title}.{book.file.extension}" if book.file and book.file.extension else book.title
 
-🏷️ <b>标签</b>
-{tags_text}
-
-💬 <b>简介</b>
-{description}
-
-📅 <b>上传信息</b>
-├ 上传者: {book.uploader_name or '未知'}
-└ 上传时间: {format_date(book.created_at) if book.created_at else '未知'}
-"""
+    detail_text = (
+        f"📄 <b>{display_filename}</b>\n\n"
+        f"书名：<b>{book.title}</b>\n"
+        f"作者：{book.author}\n"
+        f"格式：{file_format.upper() if file_format != '未知' else '未知'}\n"
+        f"大小：{file_size}\n"
+        f"字数：{word_count}\n\n"
+        f"统计：{book.view_count}浏览｜{book.download_count}下载｜{book.favorite_count}收藏\n"
+        f"评分：{book.rating_score:.2f}({book.rating_count}人)｜质量：{book.quality_score:.2f}\n\n"
+        f"标签：{tags_display}\n\n"
+        f"简介：\n{description}\n\n"
+        f"创建：{format_date(book.created_at)}\n"
+        f"更新：{format_date(book.updated_at)}\n"
+        f"上传：{uploader_name}"
+    )
 
     # 构建操作键盘
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -227,50 +240,160 @@ async def show_book_detail(callback: CallbackQuery, book_id: str):
             raise
 
 
-async def handle_download(callback: CallbackQuery, book_id: str):
+async def handle_download(callback: CallbackQuery, book_id: int):
     """处理下载请求"""
-    book = await get_book_by_id(book_id)
-
-    if not book or not book.file_id:
+    book = await get_book_from_db(book_id)
+    if not book or not book.file:
         await callback.answer("❌ 文件信息不存在")
         return
 
-    # 尝试发送文件
+    file_refs = list(book.file.file_refs) if book.file else []
+    primary_ref = pick_primary_file_ref(file_refs)
+    backup_ref = pick_backup_ref(file_refs)
+
+    if not primary_ref and not backup_ref:
+        await callback.answer("❌ 文件暂时不可用")
+        return
+
     try:
-        await callback.bot.send_document(
-            chat_id=callback.message.chat.id,
-            document=book.file_id,
-            caption=f"📚 {book.title}"
-        )
-        await callback.answer("✅ 文件已发送")
-    except Exception as e:
-        logger.error(f"下载文件失败: {e}")
-
-        # 尝试从备份恢复
-        try:
-            backup_service = await get_backup_service()
-            msg = await backup_service.send_file_to_user(
-                bot=callback.bot,
-                sha256_hash=book.file_unique_id or book.file_id,
-                user_chat_id=callback.message.chat.id,
-                caption=f"📚 {book.title}"
+        if primary_ref:
+            await callback.bot.send_document(
+                chat_id=callback.message.chat.id,
+                document=primary_ref.tg_file_id,
             )
-            if msg:
-                await callback.answer("✅ 文件已从备份恢复")
-            else:
-                await callback.answer("❌ 文件暂时无法下载，请稍后重试")
-        except Exception as e2:
-            logger.error(f"从备份恢复失败: {e2}")
-            await callback.answer("❌ 文件下载失败")
+            await record_download(
+                user_id=callback.from_user.id,
+                username=callback.from_user.username,
+                first_name=callback.from_user.first_name,
+                last_name=callback.from_user.last_name,
+                book_id=book_id,
+                file_hash=book.file_hash,
+            )
+            await callback.answer("✅ 文件已发送")
+            return
+    except Exception as e:
+        logger.warning(f"直接发送文件失败: {e}")
+
+    if backup_ref and backup_ref.channel_id and backup_ref.message_id:
+        try:
+            await callback.bot.forward_message(
+                chat_id=callback.message.chat.id,
+                from_chat_id=backup_ref.channel_id,
+                message_id=backup_ref.message_id,
+            )
+            await record_download(
+                user_id=callback.from_user.id,
+                username=callback.from_user.username,
+                first_name=callback.from_user.first_name,
+                last_name=callback.from_user.last_name,
+                book_id=book_id,
+                file_hash=book.file_hash,
+            )
+            await callback.answer("✅ 文件已从备份恢复")
+            return
+        except Exception as e:
+            logger.error(f"从备份频道转发失败: {e}")
+
+    await callback.answer("❌ 文件下载失败")
 
 
-async def handle_favorite(callback: CallbackQuery, book_id: str):
+async def handle_favorite(callback: CallbackQuery, book_id: int):
     """处理收藏请求"""
-    # TODO: 实现收藏逻辑
-    await callback.answer(
-        "❤️ 已添加到收藏夹！",
-        show_alert=True
-    )
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(User).where(User.id == callback.from_user.id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                id=callback.from_user.id,
+                username=callback.from_user.username,
+                first_name=callback.from_user.first_name,
+                last_name=callback.from_user.last_name,
+                coins=0,
+                upload_count=0,
+                download_count=0,
+                search_count=0,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+
+        stmt = select(Favorite).where(
+            Favorite.user_id == user.id,
+            Favorite.book_id == book_id,
+        )
+        result = await session.execute(stmt)
+        fav = result.scalar_one_or_none()
+
+        stmt = select(Book).where(Book.id == book_id)
+        result = await session.execute(stmt)
+        book = result.scalar_one_or_none()
+        if not book:
+            await callback.answer("❌ 书籍不存在", show_alert=True)
+            return
+
+        if fav:
+            await session.delete(fav)
+            if book.favorite_count and book.favorite_count > 0:
+                book.favorite_count -= 1
+            await session.commit()
+            await callback.answer("💔 已取消收藏", show_alert=True)
+            return
+
+        session.add(Favorite(user_id=user.id, book_id=book_id))
+        book.favorite_count += 1
+        await session.commit()
+
+    await callback.answer("❤️ 已添加到收藏夹", show_alert=True)
+
+
+async def record_download(
+    *,
+    user_id: int,
+    username: Optional[str],
+    first_name: str,
+    last_name: Optional[str],
+    book_id: int,
+    file_hash: str,
+) -> None:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        stmt = select(User).where(User.id == user_id)
+        result = await session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                id=user_id,
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
+                coins=0,
+                upload_count=0,
+                download_count=0,
+                search_count=0,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+
+        stmt = select(Book).where(Book.id == book_id)
+        result = await session.execute(stmt)
+        book = result.scalar_one_or_none()
+        if book:
+            book.download_count += 1
+
+        user.download_count += 1
+        session.add(
+            DownloadLog(
+                user_id=user_id,
+                book_id=book_id,
+                file_hash=file_hash,
+                cost_coins=0,
+                is_free=True,
+            )
+        )
+        await session.commit()
 
 
 async def handle_report(callback: CallbackQuery, book_id: str):

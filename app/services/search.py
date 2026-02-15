@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
+import asyncio
 from meilisearch import Client
 from meilisearch.errors import MeilisearchApiError
 
@@ -71,6 +72,7 @@ class SearchResult:
     download_count: int
     is_18plus: bool
     tags: List[str]
+    created_at: Optional[int] = None
     highlight: Optional[Dict[str, Any]] = None
 
 
@@ -97,7 +99,81 @@ class SearchService:
             settings.meili_api_key,
         )
         self.index = self.client.index(settings.meili_index_name)
+        self._ready = False
         logger.info(f"搜索服务初始化完成，索引: {settings.meili_index_name}")
+
+    async def ensure_ready(self) -> None:
+        if self._ready:
+            return
+        await asyncio.to_thread(self._ensure_ready_sync)
+        self._ready = True
+
+    def _ensure_ready_sync(self) -> None:
+        settings = get_settings()
+        index_name = settings.meili_index_name
+
+        index_settings = {
+            "searchableAttributes": [
+                "title",
+                "author",
+                "tags",
+                "description",
+                "series",
+            ],
+            "filterableAttributes": [
+                "format",
+                "is_18plus",
+                "is_vip_only",
+                "status",
+                "language",
+                "tags",
+            ],
+            "sortableAttributes": [
+                "created_at",
+                "rating_score",
+                "download_count",
+                "view_count",
+                "word_count",
+                "size",
+            ],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "synonyms": {},
+            "stopWords": [],
+            "separatorTokens": [],
+            "nonSeparatorTokens": [],
+        }
+
+        try:
+            self.client.get_index(index_name)
+        except MeilisearchApiError as e:
+            if getattr(e, "code", None) == "index_not_found":
+                task = self.client.create_index(index_name, {"primaryKey": "id"})
+                task_uid = None
+                if isinstance(task, dict):
+                    task_uid = task.get("taskUid") or task.get("uid") or task.get("updateId")
+                else:
+                    task_uid = getattr(task, "task_uid", None) or getattr(task, "taskUid", None)
+                if task_uid is not None:
+                    self.client.wait_for_task(task_uid)
+                self.index = self.client.index(index_name)
+            else:
+                raise
+
+        task = self.index.update_settings(index_settings)
+        task_uid = None
+        if isinstance(task, dict):
+            task_uid = task.get("taskUid") or task.get("uid") or task.get("updateId")
+        else:
+            task_uid = getattr(task, "task_uid", None) or getattr(task, "taskUid", None)
+        if task_uid is not None:
+            self.client.wait_for_task(task_uid)
 
     async def search(
         self,
@@ -138,7 +214,8 @@ class SearchService:
         offset = (page - 1) * per_page
 
         try:
-            search_result = self.index.search(
+            search_result = await asyncio.to_thread(
+                self.index.search,
                 query,
                 {
                     "offset": offset,
@@ -148,7 +225,7 @@ class SearchService:
                     "highlightPreTag": "<mark>" if highlight else None,
                     "highlightPostTag": "</mark>" if highlight else None,
                     "attributesToHighlight": ["title", "author", "description"] if highlight else None,
-                }
+                },
             )
         except Exception as e:
             logger.error(f"搜索失败: {e}")
@@ -170,6 +247,7 @@ class SearchService:
                 download_count=hit.get("download_count", 0),
                 is_18plus=hit.get("is_18plus", False),
                 tags=hit.get("tags", []),
+                created_at=hit.get("created_at"),
                 highlight=hit.get("_formatted"),
             )
             hits.append(result)
@@ -188,7 +266,14 @@ class SearchService:
             processing_time_ms=search_result.get("processingTimeMs", 0),
         )
 
-    async def add_document(self, document: Dict[str, Any]) -> bool:
+    async def add_document(
+        self,
+        document: Dict[str, Any],
+        *,
+        wait: bool = False,
+        timeout_ms: int = 5000,
+        raise_on_error: bool = False,
+    ) -> bool:
         """
         添加文档到索引
 
@@ -199,14 +284,34 @@ class SearchService:
             bool: 是否成功
         """
         try:
-            self.index.add_documents([document])
+            task = await asyncio.to_thread(self.index.add_documents, [document])
+            task_uid = None
+            if isinstance(task, dict):
+                task_uid = task.get("taskUid") or task.get("uid") or task.get("updateId")
+
+            if wait and task_uid is not None:
+                await asyncio.to_thread(
+                    self.client.wait_for_task,
+                    task_uid,
+                    timeout_in_ms=timeout_ms,
+                )
+
             logger.info(f"添加文档到索引: {document.get('id')}")
             return True
         except Exception as e:
             logger.error(f"添加文档失败: {e}")
+            if raise_on_error:
+                raise
             return False
 
-    async def update_document(self, document: Dict[str, Any]) -> bool:
+    async def update_document(
+        self,
+        document: Dict[str, Any],
+        *,
+        wait: bool = False,
+        timeout_ms: int = 5000,
+        raise_on_error: bool = False,
+    ) -> bool:
         """
         更新索引中的文档
 
@@ -217,14 +322,34 @@ class SearchService:
             bool: 是否成功
         """
         try:
-            self.index.update_documents([document])
+            task = await asyncio.to_thread(self.index.update_documents, [document])
+            task_uid = None
+            if isinstance(task, dict):
+                task_uid = task.get("taskUid") or task.get("uid") or task.get("updateId")
+
+            if wait and task_uid is not None:
+                await asyncio.to_thread(
+                    self.client.wait_for_task,
+                    task_uid,
+                    timeout_in_ms=timeout_ms,
+                )
+
             logger.info(f"更新索引文档: {document.get('id')}")
             return True
         except Exception as e:
             logger.error(f"更新文档失败: {e}")
+            if raise_on_error:
+                raise
             return False
 
-    async def delete_document(self, document_id: int) -> bool:
+    async def delete_document(
+        self,
+        document_id: int,
+        *,
+        wait: bool = False,
+        timeout_ms: int = 5000,
+        raise_on_error: bool = False,
+    ) -> bool:
         """
         从索引中删除文档
 
@@ -235,11 +360,24 @@ class SearchService:
             bool: 是否成功
         """
         try:
-            self.index.delete_document(document_id)
+            task = await asyncio.to_thread(self.index.delete_document, document_id)
+            task_uid = None
+            if isinstance(task, dict):
+                task_uid = task.get("taskUid") or task.get("uid") or task.get("updateId")
+
+            if wait and task_uid is not None:
+                await asyncio.to_thread(
+                    self.client.wait_for_task,
+                    task_uid,
+                    timeout_in_ms=timeout_ms,
+                )
+
             logger.info(f"删除索引文档: {document_id}")
             return True
         except Exception as e:
             logger.error(f"删除文档失败: {e}")
+            if raise_on_error:
+                raise
             return False
 
 
@@ -252,4 +390,5 @@ async def get_search_service() -> SearchService:
     global _search_service
     if _search_service is None:
         _search_service = SearchService()
+        await _search_service.ensure_ready()
     return _search_service

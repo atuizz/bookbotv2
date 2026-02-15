@@ -5,6 +5,7 @@
 """
 
 import hashlib
+from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,7 @@ from aiogram.enums import ParseMode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.logger import logger
 from app.core.database import get_session_factory
 from app.core.models import Book, File, User, FileRef, BookStatus, FileFormat
@@ -182,23 +184,17 @@ async def handle_document(message: Message):
     )
 
     try:
-        # 3. 下载文件并计算SHA256
-        # 注意: 在实际生产环境中，这里应该从Telegram下载文件
-        # 为了演示，我们使用file_unique_id作为伪哈希
-        file_hash = document.file_unique_id
+        await status_msg.edit_text(
+            f"⏳ <b>正在处理上传...</b>\n\n"
+            f"📁 文件: <code>{file_name}</code>\n"
+            f"� 大小: {format_file_size(file_size)}\n\n"
+            f"⬇️ 正在下载文件..."
+        )
 
-        # TODO: 在这里进行数据库查询，检查文件是否已存在
-        # is_duplicate = await check_duplicate(file_hash)
-        is_duplicate = False  # 演示用
-
-        if is_duplicate:
-            await status_msg.edit_text(
-                f"⚠️ <b>文件已存在</b>\n\n"
-                f"📁 文件: <code>{file_name}</code>\n"
-                f"🔍 该文件已被其他用户上传过\n\n"
-                f"💡 您可以直接搜索下载该文件。"
-            )
-            return
+        buffer = BytesIO()
+        await message.bot.download(document, destination=buffer)
+        file_bytes = buffer.getvalue()
+        file_hash = calculate_sha256(file_bytes)
 
         # 更新状态
         await status_msg.edit_text(
@@ -264,47 +260,68 @@ async def handle_document(message: Message):
                     is_active=True
                 )
                 session.add(file_ref)
+
+            settings = get_settings()
+            if settings.backup_channel_id:
+                try:
+                    forwarded = await message.bot.forward_message(
+                        chat_id=settings.backup_channel_id,
+                        from_chat_id=message.chat.id,
+                        message_id=message.message_id,
+                    )
+                    if forwarded.document:
+                        stmt = select(FileRef).where(
+                            FileRef.file_hash == file_hash,
+                            FileRef.channel_id == settings.backup_channel_id,
+                        )
+                        result = await session.execute(stmt)
+                        if not result.scalar_one_or_none():
+                            backup_ref = FileRef(
+                                file_hash=file_hash,
+                                tg_file_id=forwarded.document.file_id,
+                                channel_id=settings.backup_channel_id,
+                                message_id=forwarded.message_id,
+                                is_primary=False,
+                                is_backup=True,
+                                is_active=True,
+                            )
+                            session.add(backup_ref)
+                except Exception as e:
+                    logger.warning(f"备份转发失败: {e}")
+
+            stmt = select(Book).where(
+                Book.file_hash == file_hash,
+                Book.status == BookStatus.ACTIVE,
+            )
+            result = await session.execute(stmt)
+            existing_book = result.scalars().first()
             
             # 5. 计算奖励
-            reward_coins = calculate_upload_reward(file_size, file_ext)
-            
-            # 6. 创建书籍记录并更新用户
-            # 简单的书名处理：去除扩展名
-            book_title = file_name.rsplit('.', 1)[0]
-            
-            # 自动通过审核 (BookStatus.ACTIVE)
-            new_book = Book(
-                title=book_title,
-                author="Unknown", # 默认作者
-                file_hash=file_hash,
-                uploader_id=user.id,
-                status=BookStatus.ACTIVE,
-                size=file_size, # 注意：Book模型其实没有size字段，这里可能是个误解，但SearchService需要size。
-                # 检查Book模型定义，确实没有size字段，size在File中。
-                # 所以这里不能传size给Book构造函数。
-                # 我们稍后在构建索引文档时会从db_file获取size。
-                is_original=False,
-                is_18plus=False,
-                is_vip_only=False,
-                rating_score=0.0
-            )
-            # 修正：Book没有size字段，移除
-            new_book = Book(
-                title=book_title,
-                author="Unknown",
-                file_hash=file_hash,
-                uploader_id=user.id,
-                status=BookStatus.ACTIVE,
-                is_original=False,
-                is_18plus=False,
-                is_vip_only=False,
-                rating_score=0.0
-            )
-            session.add(new_book)
-            
-            # 更新用户数据
-            db_user.coins += reward_coins
-            db_user.upload_count += 1
+            reward_coins = 0
+            new_book = None
+            if existing_book:
+                new_book = existing_book
+            else:
+                reward_coins = calculate_upload_reward(file_size, file_ext)
+                book_title = file_name.rsplit('.', 1)[0]
+                new_book = Book(
+                    title=book_title,
+                    author="Unknown",
+                    file_hash=file_hash,
+                    uploader_id=user.id,
+                    status=BookStatus.ACTIVE,
+                    is_original=False,
+                    is_18plus=False,
+                    is_vip_only=False,
+                    rating_score=0.0,
+                    quality_score=0.0,
+                    rating_count=0,
+                    download_count=0,
+                )
+                session.add(new_book)
+
+                db_user.coins += reward_coins
+                db_user.upload_count += 1
             
             # 提交事务
             await session.commit()
@@ -312,33 +329,50 @@ async def handle_document(message: Message):
             
             # 7. 添加到搜索索引
             search_service = await get_search_service()
-            await search_service.add_document({
-                "id": new_book.id,
-                "title": new_book.title,
-                "author": new_book.author,
-                "format": file_ext,
-                "size": file_size,
-                "word_count": 0,
-                "rating_score": 0.0,
-                "quality_score": 0.0,
-                "rating_count": 0,
-                "download_count": 0,
-                "is_18plus": False,
-                "tags": [],
-                "created_at": new_book.created_at.timestamp() if new_book.created_at else 0
-            })
+            index_ok = await search_service.add_document(
+                {
+                    "id": new_book.id,
+                    "title": new_book.title,
+                    "author": new_book.author,
+                    "format": file_ext,
+                    "size": file_size,
+                    "word_count": db_file.word_count if db_file else 0,
+                    "rating_score": float(new_book.rating_score or 0.0),
+                    "quality_score": float(new_book.quality_score or 0.0),
+                    "rating_count": int(new_book.rating_count or 0),
+                    "download_count": int(new_book.download_count or 0),
+                    "is_18plus": bool(new_book.is_18plus),
+                    "is_vip_only": bool(new_book.is_vip_only),
+                    "tags": [],
+                    "created_at": int(new_book.created_at.timestamp()) if new_book.created_at else 0,
+                },
+                wait=True,
+                timeout_ms=8000,
+            )
 
         # 发送成功消息
         emoji = SUPPORTED_FORMATS[file_ext]["emoji"]
 
-        await status_msg.edit_text(
-            f"✅ <b>上传成功!</b>\n\n"
-            f"{emoji} <b>{file_name}</b>\n"
-            f"📏 大小: {format_file_size(file_size)}\n"
-            f"🔍 文件ID: <code>{file_hash[:16]}...</code>\n\n"
-            f"💰 <b>获得奖励:</b> +{reward_coins} 书币\n\n"
-            f"🎉 感谢你的分享! 文件已自动通过审核，现在可以被搜索到了。"
-        )
+        if reward_coins == 0 and existing_book:
+            await status_msg.edit_text(
+                f"⚠️ <b>文件已存在</b>\n\n"
+                f"{emoji} <b>{file_name}</b>\n"
+                f"📏 大小: {format_file_size(file_size)}\n"
+                f"🔍 SHA256: <code>{file_hash[:16]}...</code>\n\n"
+                f"💡 该文件已被上传过，本次不发放奖励。\n"
+                f"📚 已关联书籍ID: <code>{existing_book.id}</code>\n\n"
+                f"你可以直接搜索或从详情页下载。"
+            )
+        else:
+            suffix = "现在可以被搜索到了。" if index_ok else "已入库，索引稍后补建后即可搜索。"
+            await status_msg.edit_text(
+                f"✅ <b>上传成功!</b>\n\n"
+                f"{emoji} <b>{file_name}</b>\n"
+                f"📏 大小: {format_file_size(file_size)}\n"
+                f"🔍 SHA256: <code>{file_hash[:16]}...</code>\n\n"
+                f"💰 <b>获得奖励:</b> +{reward_coins} 书币\n\n"
+                f"🎉 感谢你的分享! 文件已自动通过审核，{suffix}"
+            )
 
         logger.info(
             f"用户 {message.from_user.id} ({message.from_user.username}) 上传文件成功: "

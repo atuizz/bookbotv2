@@ -116,15 +116,17 @@ async def show_new_ranking(message, user_id: int):
     text = "🆕 <b>最新上传榜 Top 10</b>\n\n"
 
     if response.hits:
+        from datetime import datetime
         for i, book in enumerate(response.hits[:10], 1):
             emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
             text += f"{emoji} <b>{book.title}</b>\n"
-            from datetime import datetime
             created = book.created_at
-            if isinstance(created, str):
+            if isinstance(created, int):
+                text += f"   📅 {datetime.fromtimestamp(created).strftime('%Y-%m-%d')}"
+            elif isinstance(created, str):
                 text += f"   📅 {created[:10]}"
             else:
-                text += f"   📅 {created.strftime('%Y-%m-%d') if created else '未知'}"
+                text += "   📅 未知"
             text += "\n\n"
     else:
         text += "暂无数据\n"
