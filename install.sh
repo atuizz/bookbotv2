@@ -185,6 +185,15 @@ fi
 # 配置 Meilisearch Systemd
 if [[ $HAS_SYSTEMD -eq 1 ]]; then
     info "配置 Meilisearch 服务..."
+    
+    # 强制删除旧的服务文件，确保更新生效
+    if [[ -f /etc/systemd/system/meilisearch.service ]]; then
+        info "检测到旧的 Meilisearch 服务配置，正在更新..."
+        # 停止服务以防止占用
+        systemctl stop meilisearch 2>/dev/null || true
+        rm -f /etc/systemd/system/meilisearch.service
+    fi
+
     # 确保数据目录存在
     mkdir -p /var/lib/meilisearch/data
     chmod 755 /var/lib/meilisearch/data
@@ -198,6 +207,7 @@ After=network.target
 Type=simple
 User=root
 Environment=MEILI_NO_ANALYTICS=true
+# 确保使用新生成的 Master Key，避免硬编码
 ExecStart=/usr/local/bin/meilisearch --master-key=${MEILI_MASTER_KEY} --env=production --db-path=/var/lib/meilisearch/data
 Restart=always
 RestartSec=10
@@ -207,6 +217,7 @@ LimitNOFILE=1048576
 WantedBy=multi-user.target
 EOF
     
+    # 重新加载 systemd 配置，确保更改立即生效
     systemctl daemon-reload
     systemctl enable meilisearch
     info "Meilisearch 服务配置完成 (Master Key 已更新为安全随机值)"
