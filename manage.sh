@@ -27,11 +27,6 @@ SYSTEMD_DIR="/etc/systemd/system"
 
 # 检查 .env 文件
 if [[ -f "$PROJECT_DIR/.env" ]]; then
-    # 预处理：修复可能缺少引号的带空格变量
-    if grep -q "^BOT_NAME=.* .*$" "$PROJECT_DIR/.env" && ! grep -q "^BOT_NAME=\".*\"$" "$PROJECT_DIR/.env"; then
-        sed -i 's/^BOT_NAME=\(.*\)$/BOT_NAME="\1"/' "$PROJECT_DIR/.env"
-    fi
-
     sed -i 's/\r$//' "$PROJECT_DIR/.env"
     sed -i 's/[[:space:]]*$//' "$PROJECT_DIR/.env"
     set -a
@@ -104,20 +99,8 @@ check_services() {
     if curl -s "${MEILI_HOST:-http://localhost:7700}/health" 2>/dev/null | grep -q "available"; then
         log_success "Meilisearch 运行正常"
     else
-        log_warning "Meilisearch 未响应，尝试重启服务..."
-        # 检查端口占用
-        if ss -lnt 2>/dev/null | grep -q ":7700"; then
-            log_warning "端口 7700 已被占用，可能是服务卡死或未正确响应"
-        fi
-        
-        sudo systemctl restart meilisearch 2>/dev/null || true
-        sleep 5
-        if curl -s "${MEILI_HOST:-http://localhost:7700}/health" 2>/dev/null | grep -q "available"; then
-            log_success "Meilisearch 重启后运行正常"
-        else
-            log_error "Meilisearch 未启动或无法连接 (请检查 systemctl status meilisearch)"
-            all_ok=false
-        fi
+        log_error "Meilisearch 未启动"
+        all_ok=false
     fi
 
     if [[ "$all_ok" == false ]]; then

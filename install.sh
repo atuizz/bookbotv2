@@ -6,9 +6,6 @@
 
 set -e
 
-# 确保 /usr/sbin 在 PATH 中 (Debian/Ubuntu 某些环境可能缺失)
-export PATH=$PATH:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin
-
 # 颜色输出
 red='\033[0;31m'
 green='\033[0;32m'
@@ -114,67 +111,28 @@ info "更新软件包列表..."
 apt-get update -qq || warn "更新软件包列表失败"
 
 info "安装系统依赖..."
-if [[ "$OS_ID" == "ubuntu" ]]; then
-        # 仅在 Ubuntu 上安装 PPA 管理工具，且允许失败
-        apt-get install -y software-properties-common || true
-    fi
-
-    # 核心依赖 (Debian/Ubuntu 通用)
-    DEPS=(
-        build-essential
-        libpq-dev
-        python3-dev
-        python3-venv
-        python3-pip
-        git
-        curl
-        wget
-        sudo
-        nano
-        htop
-        tree
-        redis-tools
-        postgresql-client
-        redis-server
-        postgresql
-    )
-    
-    # 尝试安装 postgresql-contrib (如果存在)
-    apt-get install -y postgresql-contrib || true
-    
-    # 循环安装核心依赖，确保单个失败不影响整体 (尽可能)
-    info "正在逐个安装依赖..."
-    for dep in "${DEPS[@]}"; do
-        apt-get install -y "$dep" || warn "依赖 $dep 安装失败，尝试继续..."
+apt-get install -y -qq \
+    software-properties-common \
+    build-essential \
+    libpq-dev \
+    python3-dev \
+    python3-venv \
+    python3-pip \
+    git \
+    curl \
+    wget \
+    nano \
+    htop \
+    tree \
+    redis-tools \
+    postgresql-client \
+    redis-server \
+    postgresql \
+    postgresql-contrib \
+    2>&1 | while read -r line; do
+        # 静默安装
+        :
     done
-
-# 验证关键依赖是否安装成功
-if ! command -v redis-server &> /dev/null; then
-    warn "Redis 似乎未正确安装，尝试强力修复..."
-    apt-get update
-    # 有些发行版可能使用 redis 包名
-    apt-get install -y redis-server || apt-get install -y redis || true
-    
-    # 再次检查
-    if ! command -v redis-server &> /dev/null; then
-        # 尝试查找二进制文件并链接
-        REDIS_BIN=$(find /usr -name redis-server -type f -executable 2>/dev/null | head -n 1)
-        if [[ -n "$REDIS_BIN" ]]; then
-            warn "找到 Redis 二进制文件: $REDIS_BIN，正在创建链接..."
-            ln -sf "$REDIS_BIN" /usr/bin/redis-server
-        else
-            warn "标准安装 redis-server 失败，尝试安装 redis..."
-            apt-get install -y redis || true
-            if ! command -v redis-server &> /dev/null; then
-                error "Redis 安装彻底失败! 无法找到 redis-server 命令。\n请尝试手动运行: sudo apt-get update && sudo apt-get install -y redis-server"
-            fi
-        fi
-    fi
-fi
-REDIS_BIN_PATH=$(command -v redis-server)
-if ! command -v psql &> /dev/null; then
-    error "PostgreSQL 安装失败! 请检查 apt 源"
-fi
 
 # 安装 Python 3.11 (如果系统没有)
 if ! version_ge "$PYTHON_VERSION" "3.11"; then
@@ -183,19 +141,14 @@ if ! version_ge "$PYTHON_VERSION" "3.11"; then
     if [[ -n "$python_candidate" && "$python_candidate" != "(none)" ]]; then
         apt-get install -y -qq python3.11 python3.11-venv python3.11-dev || true
     else
-    if [[ "$OS_ID" == "ubuntu" ]]; then
-        if ! command -v add-apt-repository &> /dev/null; then
-            apt-get install -y software-properties-common || true
+        if [[ "$OS_ID" == "ubuntu" ]]; then
+            if ! command -v add-apt-repository &> /dev/null; then
+                apt-get install -y -qq software-properties-common
+            fi
+            add-apt-repository -y ppa:deadsnakes/ppa 2>&1 > /dev/null || true
+            apt-get update -qq
+            apt-get install -y -qq python3.11 python3.11-venv python3.11-dev || true
         fi
-        add-apt-repository -y ppa:deadsnakes/ppa || true
-        apt-get update
-        apt-get install -y python3.11 python3.11-venv python3.11-dev || true
-    elif [[ "$OS_ID" == "debian" ]]; then
-         # Debian 不使用 PPA，尝试直接安装或编译安装
-         info "Debian 系统检测: 尝试直接安装 Python 3.11..."
-         apt-get update
-         apt-get install -y python3.11 python3.11-venv python3.11-dev || true
-    fi
     fi
     if command -v python3.11 &> /dev/null; then
         PYTHON_BIN="python3.11"
@@ -213,21 +166,12 @@ step "步骤 2.5: 安装和配置服务"
 
 # 1. 配置 Meilisearch
 if ! command -v meilisearch &> /dev/null; then
-        # 尝试查找是否已经存在于当前目录或 /usr/local/bin
-        if [[ -f "/usr/local/bin/meilisearch" ]]; then
-            info "发现 Meilisearch 已安装在 /usr/local/bin"
-        elif [[ -f "./meilisearch" ]]; then
-            info "发现当前目录存在 Meilisearch，正在移动..."
-            mv ./meilisearch /usr/local/bin/
-            chmod +x /usr/local/bin/meilisearch
-        else
-            info "安装 Meilisearch..."
-            curl -L https://install.meilisearch.com | sh
-            mv meilisearch /usr/local/bin/
-            chmod +x /usr/local/bin/meilisearch
-            success "Meilisearch 安装完成"
-        fi
-    fi
+    info "安装 Meilisearch..."
+    curl -L https://install.meilisearch.com | sh
+    mv meilisearch /usr/local/bin/
+    chmod +x /usr/local/bin/meilisearch
+    success "Meilisearch 安装完成"
+fi
 
 # 配置 Meilisearch Systemd
 if [[ $HAS_SYSTEMD -eq 1 && ! -f /etc/systemd/system/meilisearch.service ]]; then
@@ -250,20 +194,8 @@ EOF
     mkdir -p /var/lib/meilisearch/data
     systemctl daemon-reload
     systemctl enable meilisearch
-    systemctl restart meilisearch
-    
-    # 等待 Meilisearch 启动
-    info "等待 Meilisearch 启动..."
-    for i in {1..30}; do
-        if curl -s "http://localhost:7700/health" | grep -q "available"; then
-            success "Meilisearch 服务已就绪 (Master Key: masterKey)"
-            break
-        fi
-        if [ $i -eq 30 ]; then
-            warn "Meilisearch 启动超时，但将尝试继续..."
-        fi
-        sleep 1
-    done
+    systemctl start meilisearch
+    success "Meilisearch 服务已启动 (Master Key: masterKey)"
 elif [[ $HAS_SYSTEMD -eq 0 ]]; then
     warn "检测到非 systemd 环境，跳过 Meilisearch 服务配置"
 fi
@@ -334,10 +266,6 @@ else
     if [[ $HAS_SYSTEMD -eq 1 ]]; then
         info "启动 Redis 服务..."
         systemctl stop redis-server || true
-        # 清理可能存在的 PID 文件，防止启动失败
-        rm -f /var/run/redis/redis-server.pid
-        rm -f /run/redis/redis-server.pid
-        
         systemctl enable redis-server || true
         if ! systemctl start redis-server; then
             warn "Redis 服务启动失败，尝试重启..."
@@ -347,7 +275,7 @@ else
             success "Redis 服务启动成功"
         else
             warn "Redis 服务启动失败，尝试直接启动 Redis 进程..."
-            "$REDIS_BIN_PATH" /etc/redis/redis.conf --daemonize yes || true
+            redis-server /etc/redis/redis.conf --daemonize yes || true
             sleep 1
             if redis-cli -h 127.0.0.1 -p ${REDIS_PORT_SELECTED} ping >/dev/null 2>&1; then
                 warn "Redis 已通过直接进程启动，但 systemd 服务未就绪"
@@ -361,7 +289,7 @@ else
         fi
     else
         warn "检测到非 systemd 环境，尝试直接启动 Redis 进程"
-        "$REDIS_BIN_PATH" /etc/redis/redis.conf --daemonize yes || true
+        redis-server /etc/redis/redis.conf --daemonize yes || true
         sleep 1
         if redis-cli -h 127.0.0.1 -p ${REDIS_PORT_SELECTED} ping >/dev/null 2>&1; then
             success "Redis 服务启动成功"
@@ -393,8 +321,8 @@ mkdir -p "$PROJECT_DIR"/{app/{handlers,services,core,models},tests,logs,data,doc
 # 检查本地项目文件
 if [[ -f "run_bot.py" ]]; then
     info "发现本地项目文件，正在复制..."
-    cp -a app tests *.py *.txt *.sh "$PROJECT_DIR/" 2>/dev/null || true
-    cp -a docs "$PROJECT_DIR/" 2>/dev/null || true
+    cp -r app tests *.py *.txt *.sh "$PROJECT_DIR/" 2>/dev/null || true
+    cp -r docs "$PROJECT_DIR/" 2>/dev/null || true
     success "项目文件复制完成"
 else
     info "未找到本地项目文件，尝试从 GitHub 下载..."
@@ -406,11 +334,9 @@ else
     fi
 
     if [ -d "$PROJECT_DIR/.git" ]; then
-        info "项目目录已存在 Git 仓库，正在强制更新..."
+        info "项目目录已存在 Git 仓库，执行 git pull..."
         cd "$PROJECT_DIR"
-        # 强制更新到最新代码，覆盖本地 manage.sh (如果被修改过)
-        git fetch --all || warn "Git fetch 失败，请检查网络"
-        git reset --hard origin/master || warn "Git reset 失败，可能无法获取最新 manage.sh"
+        git pull || warn "Git pull 失败，可能存在冲突或网络问题"
     else
         info "正在克隆 Git 仓库..."
         # 尝试清理目标目录（如果存在但不是git仓库）
@@ -443,16 +369,16 @@ info "激活虚拟环境并安装依赖..."
 source .venv/bin/activate
 
 # 升级pip
-pip install --upgrade pip setuptools wheel -q --no-cache-dir
+pip install --upgrade pip setuptools wheel -q
 
 # 安装依赖
 if [[ -f "requirements.txt" ]]; then
     info "安装项目依赖..."
-    pip install -r requirements.txt -q --no-cache-dir
+    pip install -r requirements.txt -q
 else
     warn "未找到 requirements.txt"
     info "安装基础依赖..."
-    pip install aiogram python-telegram-bot sqlalchemy asyncpg redis meilisearch python-dotenv -q --no-cache-dir
+    pip install aiogram python-telegram-bot sqlalchemy asyncpg redis meilisearch python-dotenv -q
 fi
 
 success "虚拟环境创建完成"
@@ -485,7 +411,7 @@ if [[ ! -f "$PROJECT_DIR/.env" ]]; then
 # Bot 配置
 BOT_TOKEN=$USER_BOT_TOKEN
 BOT_USERNAME=$USER_BOT_USERNAME
-BOT_NAME="搜书神器 V2"
+BOT_NAME=搜书神器 V2
 BOT_VERSION=2.0.0
 
 # 数据库配置
@@ -541,12 +467,6 @@ else
         fi
         echo "BOT_TOKEN=$USER_BOT_TOKEN" >> "$PROJECT_DIR/.env"
     fi
-    # 强制修复可能损坏的 BOT_NAME
-    # 先删除旧的 BOT_NAME 行
-    sed -i '/^BOT_NAME=/d' "$PROJECT_DIR/.env"
-    # 重新添加正确的行
-    echo 'BOT_NAME="搜书神器 V2"' >> "$PROJECT_DIR/.env"
-    
     if ! grep -q "^BOT_USERNAME=" "$PROJECT_DIR/.env"; then
         echo -e "${yellow}"
         read -p "请输入您的 Telegram Bot 用户名 (不含@): " USER_BOT_USERNAME
@@ -610,59 +530,29 @@ if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet postgresql; then
         DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
         sudo -u postgres psql -c "CREATE USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';"
     fi
-    
-    # 修复 pg_hba.conf 认证策略 (添加信任规则)
-    PG_HBA_FILE=$(sudo -u postgres psql -tAc "SHOW hba_file")
-    if [[ -n "$PG_HBA_FILE" && -f "$PG_HBA_FILE" ]]; then
-        info "优化 PostgreSQL 认证策略 (针对 ${DB_USER_EFFECTIVE})..."
-        # 检查是否已存在规则
-        if ! grep -q "^host\s\+all\s\+${DB_USER_EFFECTIVE}\s\+127\.0\.0\.1\/32\s\+trust" "$PG_HBA_FILE"; then
-            info "添加 ${DB_USER_EFFECTIVE} 的本地信任规则..."
-            # 备份
-            cp "$PG_HBA_FILE" "${PG_HBA_FILE}.bak_$(date +%s)"
-            
-            # 创建临时文件包含新规则
-            echo "host    all             ${DB_USER_EFFECTIVE}             127.0.0.1/32            trust" > pg_hba_patch.tmp
-            
-            # 将新规则插入到文件最前面 (确保优先级)
-            cat pg_hba_patch.tmp "$PG_HBA_FILE" > "$PG_HBA_FILE.new"
-            mv "$PG_HBA_FILE.new" "$PG_HBA_FILE"
-            
-            # 修复权限
-            if id "postgres" &>/dev/null; then
-                chown postgres:postgres "$PG_HBA_FILE"
-            fi
-            rm -f pg_hba_patch.tmp
-            
-            # 重载配置
-            info "重载 PostgreSQL 配置..."
-            if systemctl is-active --quiet postgresql; then
-                systemctl reload postgresql
-            else
-                systemctl start postgresql
-            fi
-            sleep 1
-        else
-            info "信任规则已存在，跳过"
-        fi
-    fi
-
     DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
     sudo -u postgres psql -c "ALTER USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';" || true
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME_EFFECTIVE}'" | grep -q 1; then
         info "创建数据库 ${DB_NAME_EFFECTIVE}..."
         sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME_EFFECTIVE} OWNER ${DB_USER_EFFECTIVE};"
     fi
-    
-    # 验证连接
     if ! PGPASSWORD="${DB_PASSWORD_EFFECTIVE}" psql -h "${DB_HOST_EFFECTIVE}" -p "${DB_PORT_EFFECTIVE}" -U "${DB_USER_EFFECTIVE}" -d "${DB_NAME_EFFECTIVE}" -c "select 1" >/dev/null 2>&1; then
-        warn "数据库连接初步检查失败，尝试最终修复..."
-        # 再次确认密码
+        warn "检测到数据库连接失败，正在自动修复密码..."
+        DB_PASSWORD_EFFECTIVE="bookbot$(date +%s)${RANDOM}"
+        DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
         sudo -u postgres psql -c "ALTER USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';"
-        
-        # 如果还是失败，可能是端口问题或其他，但有了 trust 规则，通常不会报密码错误
+        if grep -q "^DB_PASSWORD=" "$PROJECT_DIR/.env"; then
+            sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=${DB_PASSWORD_EFFECTIVE}/" "$PROJECT_DIR/.env"
+        else
+            echo "DB_PASSWORD=${DB_PASSWORD_EFFECTIVE}" >> "$PROJECT_DIR/.env"
+        fi
+        if grep -q "^DATABASE_URL=" "$PROJECT_DIR/.env"; then
+            sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://${DB_USER_EFFECTIVE}:${DB_PASSWORD_EFFECTIVE}@${DB_HOST_EFFECTIVE}:${DB_PORT_EFFECTIVE}/${DB_NAME_EFFECTIVE}#" "$PROJECT_DIR/.env"
+        else
+            echo "DATABASE_URL=postgresql+asyncpg://${DB_USER_EFFECTIVE}:${DB_PASSWORD_EFFECTIVE}@${DB_HOST_EFFECTIVE}:${DB_PORT_EFFECTIVE}/${DB_NAME_EFFECTIVE}" >> "$PROJECT_DIR/.env"
+        fi
         if ! PGPASSWORD="${DB_PASSWORD_EFFECTIVE}" psql -h "${DB_HOST_EFFECTIVE}" -p "${DB_PORT_EFFECTIVE}" -U "${DB_USER_EFFECTIVE}" -d "${DB_NAME_EFFECTIVE}" -c "select 1" >/dev/null 2>&1; then
-             error "数据库连接验证失败。请检查:\n1. PostgreSQL 服务状态 (systemctl status postgresql)\n2. 端口 ${DB_PORT_EFFECTIVE} 是否正确\n3. pg_hba.conf 是否生效"
+            error "数据库认证仍失败，请检查 PostgreSQL 的认证配置"
         fi
     fi
     success "PostgreSQL 配置完成"
@@ -688,7 +578,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=${SUDO_USER:-root}
+User=root
 WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/.venv/bin
 ExecStart=$PROJECT_DIR/.venv/bin/python $PROJECT_DIR/run_bot.py
@@ -707,7 +597,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=${SUDO_USER:-root}
+User=root
 WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/.venv/bin
 ExecStart=$PROJECT_DIR/.venv/bin/arq app.worker.WorkerSettings
@@ -738,14 +628,6 @@ chmod +x "$PROJECT_DIR/manage.sh"
 
 info "初始化数据库..."
 cd "$PROJECT_DIR"
-# 最后一道防线：确保 .env 文件绝对正确
-sed -i 's/^BOT_NAME=\([^"]\)/BOT_NAME="\1"/' .env || true
-sed -i 's/V2$/V2"/' .env || true # 修复结尾引号
-# 直接暴力替换，如果上面正则失效
-if grep -q "BOT_NAME=搜书神器 V2" .env; then
-    sed -i 's/BOT_NAME=搜书神器 V2/BOT_NAME="搜书神器 V2"/' .env
-fi
-
 if ./manage.sh migrate; then
     success "数据库初始化成功"
 else
@@ -798,15 +680,6 @@ systemctl status book-bot-v2-worker --no-pager | grep "Active:" || true
 echo ""
 
 success "所有服务已启动，您可以开始使用了！"
-
-# 修复项目目录权限 (确保非 root 用户也能操作)
-if [[ -n "$SUDO_USER" ]]; then
-    info "正在修复目录权限 (所有者: $SUDO_USER)..."
-    chown -R "$SUDO_USER":"$SUDO_USER" "$PROJECT_DIR"
-    # 确保 systemd 服务文件仍归 root 所有 (虽然 systemd 会忽略)
-    # 但 .env 必须是 640
-    chmod 640 "$PROJECT_DIR/.env"
-fi
 
 # 清理
 rm -f $0
