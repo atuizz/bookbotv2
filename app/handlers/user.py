@@ -4,6 +4,8 @@
 处理用户中心、书币、收藏等
 """
 
+import asyncio
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
@@ -22,29 +24,40 @@ user_router = Router(name="user")
 async def cmd_me(message: Message):
     """个人中心 - 显示用户信息"""
     tg_user = message.from_user
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        stmt = select(User).where(User.id == tg_user.id)
-        result = await session.execute(stmt)
-        user = result.scalar_one_or_none()
-        if not user:
-            user = User(
-                id=tg_user.id,
-                username=tg_user.username,
-                first_name=tg_user.first_name,
-                last_name=tg_user.last_name,
-                coins=0,
-                upload_count=0,
-                download_count=0,
-                search_count=0,
-            )
-            session.add(user)
-            await session.commit()
-            await session.refresh(user)
+    status = await message.answer("⏳ 正在加载个人信息...")
 
-        fav_count = await session.scalar(
-            select(func.count()).select_from(Favorite).where(Favorite.user_id == user.id)
-        )
+    async def load():
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            stmt = select(User).where(User.id == tg_user.id)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
+                user = User(
+                    id=tg_user.id,
+                    username=tg_user.username,
+                    first_name=tg_user.first_name,
+                    last_name=tg_user.last_name,
+                    coins=0,
+                    upload_count=0,
+                    download_count=0,
+                    search_count=0,
+                )
+                session.add(user)
+                await session.commit()
+                await session.refresh(user)
+
+            fav_count = await session.scalar(
+                select(func.count()).select_from(Favorite).where(Favorite.user_id == user.id)
+            )
+            return user, (fav_count or 0)
+
+    try:
+        user, fav_count = await asyncio.wait_for(load(), timeout=3)
+    except Exception as e:
+        logger.warning(f"/me 查询失败: {e}")
+        await status.edit_text("❌ 当前服务繁忙，请稍后再试")
+        return
 
     text = f"""
 👤 <b>个人中心</b>
@@ -69,32 +82,43 @@ async def cmd_me(message: Message):
 • 收藏的书籍可在 /fav 中查看
 """
 
-    await message.answer(text)
+    await status.edit_text(text)
 
 
 @user_router.message(Command("coins"))
 async def cmd_coins(message: Message):
     """查看书币余额"""
     tg_user = message.from_user
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        stmt = select(User).where(User.id == tg_user.id)
-        result = await session.execute(stmt)
-        user = result.scalar_one_or_none()
-        if not user:
-            user = User(
-                id=tg_user.id,
-                username=tg_user.username,
-                first_name=tg_user.first_name,
-                last_name=tg_user.last_name,
-                coins=0,
-                upload_count=0,
-                download_count=0,
-                search_count=0,
-            )
-            session.add(user)
-            await session.commit()
-            await session.refresh(user)
+    status = await message.answer("⏳ 正在查询余额...")
+
+    async def load():
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            stmt = select(User).where(User.id == tg_user.id)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
+                user = User(
+                    id=tg_user.id,
+                    username=tg_user.username,
+                    first_name=tg_user.first_name,
+                    last_name=tg_user.last_name,
+                    coins=0,
+                    upload_count=0,
+                    download_count=0,
+                    search_count=0,
+                )
+                session.add(user)
+                await session.commit()
+                await session.refresh(user)
+            return user
+
+    try:
+        user = await asyncio.wait_for(load(), timeout=3)
+    except Exception as e:
+        logger.warning(f"/coins 查询失败: {e}")
+        await status.edit_text("❌ 当前服务繁忙，请稍后再试")
+        return
 
     text = f"""
 💰 <b>书币余额</b>
@@ -114,37 +138,51 @@ async def cmd_coins(message: Message):
 • 完善资料: +5 书币
 """
 
-    await message.answer(text)
+    await status.edit_text(text)
 
 
 @user_router.message(Command("fav"))
 async def cmd_favorites(message: Message):
     """查看收藏列表"""
     tg_user = message.from_user
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        stmt = select(User).where(User.id == tg_user.id)
-        result = await session.execute(stmt)
-        user = result.scalar_one_or_none()
-        if not user:
-            await message.answer(
-                "📚 <b>我的收藏</b>\n\n"
-                "您还没有注册记录，请先发送 /start"
-            )
-            return
+    status = await message.answer("⏳ 正在加载收藏列表...")
 
-        stmt = (
-            select(Favorite)
-            .where(Favorite.user_id == user.id)
-            .order_by(Favorite.created_at.desc())
-            .options(selectinload(Favorite.book))
-            .limit(20)
+    async def load():
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            stmt = select(User).where(User.id == tg_user.id)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
+                return None, []
+
+            stmt = (
+                select(Favorite)
+                .where(Favorite.user_id == user.id)
+                .order_by(Favorite.created_at.desc())
+                .options(selectinload(Favorite.book))
+                .limit(20)
+            )
+            result = await session.execute(stmt)
+            favorites = result.scalars().all()
+            return user, favorites
+
+    try:
+        user, favorites = await asyncio.wait_for(load(), timeout=3)
+    except Exception as e:
+        logger.warning(f"/fav 查询失败: {e}")
+        await status.edit_text("❌ 当前服务繁忙，请稍后再试")
+        return
+
+    if not user:
+        await status.edit_text(
+            "📚 <b>我的收藏</b>\n\n"
+            "您还没有注册记录，请先发送 /start"
         )
-        result = await session.execute(stmt)
-        favorites = result.scalars().all()
+        return
 
     if not favorites:
-        await message.answer(
+        await status.edit_text(
             "📚 <b>我的收藏</b>\n\n"
             "您的收藏夹是空的。\n\n"
             "💡 搜索书籍并在详情页点击收藏按钮，即可将书籍添加到收藏夹！"
@@ -178,33 +216,44 @@ async def cmd_favorites(message: Message):
     keyboard_rows.append([InlineKeyboardButton(text="❌ 关闭", callback_data="close")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
-    await message.answer("\n".join(lines), reply_markup=keyboard)
+    await status.edit_text("\n".join(lines), reply_markup=keyboard)
 
 
 @user_router.message(Command("history"))
 async def cmd_history(message: Message):
     """查看下载历史"""
     tg_user = message.from_user
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        stmt = (
-            select(DownloadLog)
-            .where(DownloadLog.user_id == tg_user.id)
-            .order_by(DownloadLog.created_at.desc())
-            .limit(20)
-        )
-        result = await session.execute(stmt)
-        logs = result.scalars().all()
+    status = await message.answer("⏳ 正在加载下载历史...")
 
-        book_ids = [log.book_id for log in logs]
-        books_by_id: dict[int, Book] = {}
-        if book_ids:
-            result = await session.execute(select(Book).where(Book.id.in_(book_ids)))
-            for book in result.scalars().all():
-                books_by_id[book.id] = book
+    async def load():
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            stmt = (
+                select(DownloadLog)
+                .where(DownloadLog.user_id == tg_user.id)
+                .order_by(DownloadLog.created_at.desc())
+                .limit(20)
+            )
+            result = await session.execute(stmt)
+            logs = result.scalars().all()
+
+            book_ids = [log.book_id for log in logs]
+            books_by_id: dict[int, Book] = {}
+            if book_ids:
+                result = await session.execute(select(Book).where(Book.id.in_(book_ids)))
+                for book in result.scalars().all():
+                    books_by_id[book.id] = book
+            return logs, books_by_id
+
+    try:
+        logs, books_by_id = await asyncio.wait_for(load(), timeout=3)
+    except Exception as e:
+        logger.warning(f"/history 查询失败: {e}")
+        await status.edit_text("❌ 当前服务繁忙，请稍后再试")
+        return
 
     if not logs:
-        await message.answer(
+        await status.edit_text(
             "📜 <b>下载历史</b>\n\n"
             "暂无记录。\n\n"
             "💡 通过 /s 搜索并下载书籍后，这里会显示历史记录。"
@@ -238,4 +287,4 @@ async def cmd_history(message: Message):
     keyboard_rows.append([InlineKeyboardButton(text="❌ 关闭", callback_data="close")])
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
-    await message.answer("\n".join(lines), reply_markup=keyboard)
+    await status.edit_text("\n".join(lines), reply_markup=keyboard)

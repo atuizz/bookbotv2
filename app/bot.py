@@ -97,6 +97,15 @@ async def main() -> None:
         fsm_strategy=FSMStrategy.CHAT,
     )
 
+    loop = asyncio.get_running_loop()
+
+    def on_loop_exception(_loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        exc = context.get("exception")
+        msg = context.get("message") or "asyncio loop exception"
+        logger.error(f"事件循环异常: {msg}", exc_info=exc)
+
+    loop.set_exception_handler(on_loop_exception)
+
     # 注册启动和关闭钩子
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)

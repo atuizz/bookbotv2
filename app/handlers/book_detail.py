@@ -9,6 +9,8 @@
 3. 备份服务集成，确保文件可恢复
 """
 
+import asyncio
+
 from typing import Optional
 from datetime import datetime
 
@@ -125,7 +127,13 @@ async def show_book_detail(callback: CallbackQuery, book_id: int):
     1. 文件消息 (包含实际的文件附件)
     2. 详情消息 (书籍信息和操作按钮)
     """
-    book = await get_book_from_db(book_id)
+    await callback.answer("⏳ 加载中...")
+    try:
+        book = await asyncio.wait_for(get_book_from_db(book_id), timeout=3)
+    except Exception as e:
+        logger.warning(f"获取书籍详情失败: {e}")
+        await callback.answer("❌ 当前服务繁忙，请稍后重试", show_alert=True)
+        return
 
     if not book:
         await callback.answer("❌ 书籍信息获取失败")
@@ -242,7 +250,13 @@ async def show_book_detail(callback: CallbackQuery, book_id: int):
 
 async def handle_download(callback: CallbackQuery, book_id: int):
     """处理下载请求"""
-    book = await get_book_from_db(book_id)
+    await callback.answer("⏳ 正在准备文件...")
+    try:
+        book = await asyncio.wait_for(get_book_from_db(book_id), timeout=3)
+    except Exception as e:
+        logger.warning(f"获取下载信息失败: {e}")
+        await callback.answer("❌ 当前服务繁忙，请稍后重试", show_alert=True)
+        return
     if not book or not book.file:
         await callback.answer("❌ 文件信息不存在")
         return
@@ -299,6 +313,7 @@ async def handle_download(callback: CallbackQuery, book_id: int):
 
 async def handle_favorite(callback: CallbackQuery, book_id: int):
     """处理收藏请求"""
+    await callback.answer("⏳ 处理中...")
     session_factory = get_session_factory()
     async with session_factory() as session:
         stmt = select(User).where(User.id == callback.from_user.id)

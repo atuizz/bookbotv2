@@ -21,6 +21,24 @@ warn() { echo -e "${yellow}[警告]${reset} $1"; }
 error() { echo -e "${red}[错误]${reset} $1"; exit 1; }
 step() { echo -e "\n${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${reset}"; echo -e "${cyan}  $1${reset}"; echo -e "${cyan}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${reset}\n"; }
 version_ge() { [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]; }
+print_deploy_info() {
+    local old_commit="$1"
+    local new_commit="$2"
+    local old_desc="$3"
+    local new_desc="$4"
+
+    echo ""
+    echo -e "${green}当前代码版本:${reset} ${new_commit:-unknown} ${new_desc:+(${new_desc})}"
+    if [[ -n "$old_commit" && -n "$new_commit" && "$old_commit" != "$new_commit" ]]; then
+        echo -e "${green}上一版本:${reset} ${old_commit:-unknown} ${old_desc:+(${old_desc})}"
+        echo -e "${green}更新内容:${reset}"
+        git --no-pager log --oneline --decorate "${old_commit}..${new_commit}" | head -n 20 || true
+    elif [[ -n "$new_commit" ]]; then
+        echo -e "${green}更新内容:${reset}"
+        git --no-pager log --oneline --decorate -n 10 || true
+    fi
+    echo ""
+}
 HAS_SYSTEMD=0
 if command -v systemctl &> /dev/null && [ -d /run/systemd/system ]; then
     HAS_SYSTEMD=1
@@ -36,6 +54,10 @@ DB_DEFAULT_PORT="5432"
 DB_DEFAULT_NAME="bookbot_v2"
 DB_DEFAULT_USER="bookbot"
 DB_DEFAULT_PASSWORD="password"
+DEPLOY_OLD_COMMIT=""
+DEPLOY_OLD_DESC=""
+DEPLOY_NEW_COMMIT=""
+DEPLOY_NEW_DESC=""
 
 env_get() {
     local key="$1"
@@ -231,7 +253,7 @@ if [[ $HAS_SYSTEMD -eq 1 ]]; then
         info "等待 Meilisearch 启动..."
         for i in {1..30}; do
             if curl -s "http://localhost:7700/health" | grep -q "available"; then
-                success "Meilisearch 服务已就绪 (Master Key: ${MEILI_MASTER_KEY})"
+                success "Meilisearch 服务已就绪"
                 break
             fi
             if [ $i -eq 30 ]; then
@@ -273,7 +295,7 @@ elif [[ $HAS_SYSTEMD -eq 0 ]]; then
     nohup /usr/local/bin/meilisearch --master-key=${MEILI_MASTER_KEY} --env=production --db-path=/var/lib/meilisearch/data > /var/log/meilisearch.log 2>&1 &
     sleep 5
     if curl -s "http://localhost:7700/health" | grep -q "available"; then
-        success "Meilisearch 已在后台启动 (Master Key: ${MEILI_MASTER_KEY})"
+        success "Meilisearch 已在后台启动"
     else
         error "Meilisearch 启动失败，请检查 /var/log/meilisearch.log"
     fi
@@ -421,10 +443,14 @@ else
         fi
         
         cd "$PROJECT_DIR"
+        DEPLOY_OLD_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || true)
+        DEPLOY_OLD_DESC=$(git show -s --format="%ci %s" HEAD 2>/dev/null || true)
         # 强制更新到最新代码
         info "正在更新代码..."
         git fetch --all
         git reset --hard origin/master
+        DEPLOY_NEW_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || true)
+        DEPLOY_NEW_DESC=$(git show -s --format="%ci %s" HEAD 2>/dev/null || true)
     else
         info "正在克隆 Git 仓库..."
         # 尝试清理目标目录（如果存在但不是git仓库）
@@ -434,6 +460,9 @@ else
         fi
         
         git clone https://github.com/atuizz/bookbotv2.git "$PROJECT_DIR"
+        cd "$PROJECT_DIR"
+        DEPLOY_NEW_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || true)
+        DEPLOY_NEW_DESC=$(git show -s --format="%ci %s" HEAD 2>/dev/null || true)
     fi
     
     if [[ -f "$PROJECT_DIR/run_bot.py" ]]; then
@@ -444,6 +473,11 @@ else
 fi
 
 success "项目结构创建完成"
+if [[ -d "$PROJECT_DIR/.git" ]]; then
+    cd "$PROJECT_DIR"
+    print_deploy_info "$DEPLOY_OLD_COMMIT" "$DEPLOY_NEW_COMMIT" "$DEPLOY_OLD_DESC" "$DEPLOY_NEW_DESC"
+    echo "$DEPLOY_NEW_COMMIT" > "$PROJECT_DIR/.deploy_last_commit" || true
+fi
 
 # 步骤4: 创建Python虚拟环境
 step "步骤 4/7: 创建Python虚拟环境"
@@ -672,9 +706,14 @@ Type=simple
 User=root
 WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/.venv/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONFAULTHANDLER=1
+ExecStartPre=/bin/bash -lc 'cd $PROJECT_DIR && echo "VERSION $(git rev-parse --short HEAD 2>/dev/null) $(git show -s --format=%ci 2>/dev/null)"'
 ExecStart=$PROJECT_DIR/.venv/bin/python $PROJECT_DIR/run_bot.py
 Restart=always
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -691,9 +730,14 @@ Type=simple
 User=root
 WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/.venv/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONFAULTHANDLER=1
+ExecStartPre=/bin/bash -lc 'cd $PROJECT_DIR && echo "VERSION $(git rev-parse --short HEAD 2>/dev/null) $(git show -s --format=%ci 2>/dev/null)"'
 ExecStart=$PROJECT_DIR/.venv/bin/arq app.worker.WorkerSettings
 Restart=always
 RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -765,6 +809,9 @@ echo ""
 echo -e "${green}项目目录:${reset} $PROJECT_DIR"
 echo -e "${green}虚拟环境:${reset} $PROJECT_DIR/.venv"
 echo -e "${green}日志目录:${reset} $PROJECT_DIR/logs"
+if [[ -n "$DEPLOY_NEW_COMMIT" ]]; then
+    echo -e "${green}部署版本:${reset} $DEPLOY_NEW_COMMIT"
+fi
 echo ""
 echo -e "${green}服务状态:${reset}"
 systemctl status book-bot-v2 --no-pager | grep "Active:" || true

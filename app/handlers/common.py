@@ -4,6 +4,8 @@
 处理基本命令和通用回调
 """
 
+import asyncio
+
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
@@ -19,26 +21,6 @@ common_router = Router(name="common")
 @common_router.message(Command("start"))
 async def cmd_start(message: Message):
     """处理 /start 命令"""
-    tg_user = message.from_user
-    session_factory = get_session_factory()
-    async with session_factory() as session:
-        stmt = select(User).where(User.id == tg_user.id)
-        result = await session.execute(stmt)
-        user = result.scalar_one_or_none()
-        if not user:
-            user = User(
-                id=tg_user.id,
-                username=tg_user.username,
-                first_name=tg_user.first_name,
-                last_name=tg_user.last_name,
-                coins=0,
-                upload_count=0,
-                download_count=0,
-                search_count=0,
-            )
-            session.add(user)
-            await session.commit()
-
     welcome_text = f"""
 👋 欢迎使用 <b>搜书神器 V2</b>!
 
@@ -55,6 +37,35 @@ async def cmd_start(message: Message):
 💡 <b>提示：</b>上传你的书籍，还能获得书币奖励哦！
 """
     await message.answer(welcome_text)
+
+    async def ensure_user() -> None:
+        tg_user = message.from_user
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            stmt = select(User).where(User.id == tg_user.id)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
+                user = User(
+                    id=tg_user.id,
+                    username=tg_user.username,
+                    first_name=tg_user.first_name,
+                    last_name=tg_user.last_name,
+                    coins=0,
+                    upload_count=0,
+                    download_count=0,
+                    search_count=0,
+                )
+                session.add(user)
+                await session.commit()
+
+    async def ensure_user_with_timeout() -> None:
+        try:
+            await asyncio.wait_for(ensure_user(), timeout=3)
+        except Exception as e:
+            logger.warning(f"/start 写入用户记录失败: {e}")
+
+    asyncio.create_task(ensure_user_with_timeout())
 
 
 @common_router.message(Command("help"))

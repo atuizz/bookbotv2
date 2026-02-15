@@ -5,9 +5,12 @@
 """
 
 import logging
+import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from logging.handlers import TimedRotatingFileHandler
 
 
 class ColoredFormatter(logging.Formatter):
@@ -68,44 +71,71 @@ class Logger:
         except Exception:
             pass
 
-        # 创建日志记录器
-        self._logger = logging.getLogger("bookbot")
-        self._logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+        level = getattr(logging, log_level.upper(), logging.INFO)
+        log_dir.mkdir(parents=True, exist_ok=True)
 
-        # 清除现有处理器
-        self._logger.handlers = []
+        class JsonFormatter(logging.Formatter):
+            def format(self, record: logging.LogRecord) -> str:
+                payload = {
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "msg": record.getMessage(),
+                    "module": record.module,
+                    "func": record.funcName,
+                    "line": record.lineno,
+                    "process": record.process,
+                    "thread": record.thread,
+                }
+                if record.exc_info:
+                    payload["exc"] = self.formatException(record.exc_info)
+                return json.dumps(payload, ensure_ascii=False)
 
-        # 控制台处理器
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(logging.DEBUG)
-
-        # 选择格式化器
         if log_format.lower() == "json":
-            formatter = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-            )
+            console_formatter: logging.Formatter = JsonFormatter()
+            file_formatter: logging.Formatter = JsonFormatter()
         else:
-            formatter = ColoredFormatter(
+            console_formatter = ColoredFormatter(
                 '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
+                datefmt='%Y-%m-%d %H:%M:%S',
+            )
+            file_formatter = logging.Formatter(
+                '%(asctime)s [%(levelname)s] %(name)s [%(filename)s:%(lineno)d] %(message)s'
             )
 
-        console_handler.setFormatter(formatter)
-        self._logger.addHandler(console_handler)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(level)
+        console_handler.setFormatter(console_formatter)
 
-        # 文件处理器 (生产环境)
-        if log_level.upper() in {"INFO", "DEBUG"}:
-            log_file = log_dir / "bookbot.log"
-            log_file.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = TimedRotatingFileHandler(
+            filename=str(log_dir / "bookbot.log"),
+            when="midnight",
+            backupCount=14,
+            encoding="utf-8",
+            utc=True,
+        )
+        file_handler.setLevel(level)
+        file_handler.setFormatter(file_formatter)
 
-            file_handler = logging.FileHandler(log_file, encoding='utf-8')
-            file_handler.setLevel(logging.DEBUG)
-            file_handler.setFormatter(
-                logging.Formatter(
-                    '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
-                )
-            )
-            self._logger.addHandler(file_handler)
+        error_file_handler = TimedRotatingFileHandler(
+            filename=str(log_dir / "bookbot-error.log"),
+            when="midnight",
+            backupCount=30,
+            encoding="utf-8",
+            utc=True,
+        )
+        error_file_handler.setLevel(logging.ERROR)
+        error_file_handler.setFormatter(file_formatter)
+
+        logging.basicConfig(
+            level=level,
+            handlers=[console_handler, file_handler, error_file_handler],
+            force=True,
+        )
+
+        self._logger = logging.getLogger("bookbot")
+        self._logger.setLevel(level)
+        self._logger.propagate = True
 
     @property
     def logger(self) -> logging.Logger:
