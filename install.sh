@@ -462,7 +462,7 @@ if [[ ! -f "$PROJECT_DIR/.env" ]]; then
 # Bot 配置
 BOT_TOKEN=$USER_BOT_TOKEN
 BOT_USERNAME=$USER_BOT_USERNAME
-BOT_NAME=搜书神器 V2
+BOT_NAME="搜书神器 V2"
 BOT_VERSION=2.0.0
 
 # 数据库配置
