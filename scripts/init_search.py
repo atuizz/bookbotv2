@@ -9,11 +9,11 @@ import asyncio
 import sys
 from pathlib import Path
 
-# 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from meilisearch import Client
 from meilisearch.errors import MeilisearchApiError
+
+# 添加项目根目录到路径
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.config import get_settings
 from app.core.logger import logger
@@ -72,7 +72,7 @@ async def init_meilisearch():
     logger.info("开始初始化 Meilisearch...")
     settings = get_settings()
 
-    # 创建客户端
+    # 创建客户端 (注意：meilisearch-python 客户端是同步的)
     client = Client(
         settings.meili_host,
         settings.meili_api_key,
@@ -81,7 +81,8 @@ async def init_meilisearch():
     # 检查服务健康状态
     try:
         health = client.health()
-        logger.info(f"Meilisearch 健康状态: {health.status}")
+        status = health.get('status', 'unknown')
+        logger.info(f"Meilisearch 健康状态: {status}")
     except Exception as e:
         logger.error(f"Meilisearch 连接失败: {e}")
         return False
@@ -90,41 +91,67 @@ async def init_meilisearch():
     index_name = settings.meili_index_name
 
     try:
-        # 尝试获取现有索引
-        index = client.index(index_name)
-        index.fetch_info()
+        # 尝试获取索引
+        client.get_index(index_name)
         logger.info(f"索引 '{index_name}' 已存在")
     except MeilisearchApiError as e:
+        # 检查错误代码
         if e.code == "index_not_found":
             # 创建新索引
             logger.info(f"创建新索引 '{index_name}'...")
-            client.create_index(index_name, {"primaryKey": "id"})
-            index = client.index(index_name)
+            try:
+                task = client.create_index(index_name, {"primaryKey": "id"})
+                logger.info(f"索引创建任务已提交: {task.task_uid}")
+                # 等待任务完成
+                client.wait_for_task(task.task_uid)
+                logger.info("索引创建成功")
+            except Exception as create_error:
+                logger.error(f"创建索引失败: {create_error}")
+                return False
         else:
+            logger.error(f"获取索引失败: {e}")
             raise
+
+    # 获取索引对象
+    index = client.index(index_name)
 
     # 更新索引设置
     logger.info("更新索引设置...")
-    index.update_settings(INDEX_SETTINGS)
+    try:
+        task = index.update_settings(INDEX_SETTINGS)
+        logger.info(f"设置更新任务已提交: {task.task_uid}")
+        client.wait_for_task(task.task_uid)
+        logger.info("索引设置已更新")
+    except Exception as e:
+        logger.error(f"更新设置失败: {e}")
+        return False
 
     # 获取最终设置确认
-    final_settings = index.get_settings()
-    logger.info(f"索引设置完成，可搜索字段: {final_settings.searchable_attributes}")
+    try:
+        final_settings = index.get_settings()
+        # 兼容性处理
+        searchable = getattr(final_settings, 'searchable_attributes', 
+                     getattr(final_settings, 'searchableAttributes', []))
+        logger.info(f"索引设置完成，可搜索字段: {searchable}")
+    except Exception as e:
+        logger.warning(f"无法获取最终设置 (可能是非致命错误): {e}")
 
-    logger.success("Meilisearch 初始化完成！")
+    logger.info("Meilisearch 初始化完成！")
     return True
 
 
-def main():
-    """主函数"""
+def init_meilisearch_sync():
+    """同步初始化 Meilisearch 索引 (包装器)"""
     try:
-        asyncio.run(init_meilisearch())
-    except KeyboardInterrupt:
-        logger.info("操作已取消")
-    except Exception as e:
-        logger.error(f"初始化失败: {e}")
-        sys.exit(1)
-
+        # 兼容 Python 3.7+
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # 如果已有事件循环运行，则创建任务
+            return loop.create_task(init_meilisearch())
+        else:
+            return loop.run_until_complete(init_meilisearch())
+    except RuntimeError:
+        return asyncio.run(init_meilisearch())
 
 if __name__ == "__main__":
-    main()
+    init_meilisearch_sync()
