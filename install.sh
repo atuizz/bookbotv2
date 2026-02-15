@@ -26,8 +26,12 @@ print_deploy_info() {
     local new_commit="$2"
     local old_desc="$3"
     local new_desc="$4"
+    local remote_short="$5"
 
     echo ""
+    if [[ -n "$remote_short" ]]; then
+        echo -e "${green}远端 master:${reset} ${remote_short}"
+    fi
     echo -e "${green}当前代码版本:${reset} ${new_commit:-unknown} ${new_desc:+(${new_desc})}"
     if [[ -n "$old_commit" && -n "$new_commit" && "$old_commit" != "$new_commit" ]]; then
         echo -e "${green}上一版本:${reset} ${old_commit:-unknown} ${old_desc:+(${old_desc})}"
@@ -48,6 +52,7 @@ fi
 PROJECT_NAME="搜书神器 V2"
 PROJECT_DIR="/opt/book_bot_v2"
 SERVICE_NAME="book-bot-v2"
+REPO_URL="https://github.com/atuizz/bookbotv2.git"
 REDIS_PORT_SELECTED=6379
 DB_DEFAULT_HOST="127.0.0.1"
 DB_DEFAULT_PORT="5432"
@@ -447,6 +452,8 @@ else
         DEPLOY_OLD_DESC=$(git show -s --format="%ci %s" HEAD 2>/dev/null || true)
         # 强制更新到最新代码
         info "正在更新代码..."
+        REMOTE_MASTER=$(git ls-remote "$REPO_URL" refs/heads/master 2>/dev/null | awk '{print $1}' | head -n 1 || true)
+        REMOTE_MASTER_SHORT="${REMOTE_MASTER:0:7}"
         git fetch --all
         git reset --hard origin/master
         DEPLOY_NEW_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || true)
@@ -459,7 +466,9 @@ else
             mv "$PROJECT_DIR" "${PROJECT_DIR}_backup_$(date +%Y%m%d%H%M%S)"
         fi
         
-        git clone https://github.com/atuizz/bookbotv2.git "$PROJECT_DIR"
+        REMOTE_MASTER=$(git ls-remote "$REPO_URL" refs/heads/master 2>/dev/null | awk '{print $1}' | head -n 1 || true)
+        REMOTE_MASTER_SHORT="${REMOTE_MASTER:0:7}"
+        git clone "$REPO_URL" "$PROJECT_DIR"
         cd "$PROJECT_DIR"
         DEPLOY_NEW_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || true)
         DEPLOY_NEW_DESC=$(git show -s --format="%ci %s" HEAD 2>/dev/null || true)
@@ -475,7 +484,7 @@ fi
 success "项目结构创建完成"
 if [[ -d "$PROJECT_DIR/.git" ]]; then
     cd "$PROJECT_DIR"
-    print_deploy_info "$DEPLOY_OLD_COMMIT" "$DEPLOY_NEW_COMMIT" "$DEPLOY_OLD_DESC" "$DEPLOY_NEW_DESC"
+    print_deploy_info "$DEPLOY_OLD_COMMIT" "$DEPLOY_NEW_COMMIT" "$DEPLOY_OLD_DESC" "$DEPLOY_NEW_DESC" "$REMOTE_MASTER_SHORT"
     echo "$DEPLOY_NEW_COMMIT" > "$PROJECT_DIR/.deploy_last_commit" || true
 fi
 
