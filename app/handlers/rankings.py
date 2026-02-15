@@ -21,7 +21,7 @@ from app.services.search import get_search_service
 rankings_router = Router(name="rankings")
 
 
-@rankings_router.message(Command("top"))
+@rankings_router.message(Command(commands=["top", "topuser"]))
 async def cmd_top(message: Message):
     """
     处理 /top 排行榜命令

@@ -54,6 +54,16 @@ def format_date(dt: Optional[datetime]) -> str:
         return "未知"
 
 
+def format_word_count(count: int) -> str:
+    if count < 10000:
+        return f"{count}"
+    if count < 100000000:
+        value = count / 10000
+        value = int(value * 10) / 10
+        return f"{value:.1f}万"
+    return f"{count / 100000000:.1f}亿"
+
+
 def pick_primary_file_ref(file_refs: list[FileRef]) -> Optional[FileRef]:
     for ref in file_refs:
         if ref.is_active and ref.is_primary and ref.tg_file_id:
@@ -110,19 +120,20 @@ def build_book_caption(book: Book) -> str:
     word_count = book.file.word_count if book.file else 0
     display_filename = f"{book.title}.{book.file.extension}" if book.file and book.file.extension else book.title
 
+    fmt_display = file_format.upper() if file_format != "未知" else "未知"
     lines = [
-        f"📄 <b>{display_filename}</b>",
-        "",
-        f"书名：<b>{book.title}</b>",
+        f"书名：{book.title}",
+        f"文件：{display_filename}",
         f"作者：{book.author or 'Unknown'}",
-        f"格式：{file_format.upper() if file_format != '未知' else '未知'} | 大小：{file_size} | 字数：{word_count}",
+        f"文库：{fmt_display}· {file_size} · {format_word_count(word_count)}字",
         "",
-        f"统计：{book.view_count}浏览｜{book.download_count}下载｜{book.favorite_count}收藏",
-        f"评分：{book.rating_score:.2f}({book.rating_count}人)｜质量：{book.quality_score:.2f}",
+        f"统计：{book.view_count}热度｜{book.download_count}下载｜{book.like_count}点赞｜{book.favorite_count}收藏",
+        f"评分：{book.rating_score:.2f}分({book.rating_count}人)",
+        f"质量：{book.quality_score:.2f}分({book.rating_count}人)",
         "",
         f"标签：{tags_display}",
         "",
-        f"简介：{description}",
+        description,
         "",
         f"创建：{format_date(book.created_at)}",
         f"更新：{format_date(book.updated_at)}",
@@ -132,14 +143,8 @@ def build_book_caption(book: Book) -> str:
     if len(caption) <= 980:
         return caption
 
-    lines = [line for line in lines if not line.startswith("简介：")]
-    caption = "\n".join(lines)
-    if len(caption) <= 980:
-        return caption
-
-    while len(caption) > 980 and len(lines) > 6:
-        lines.pop(-2)
-        caption = "\n".join(lines)
+    compact = [line for line in lines if line != description]
+    caption = "\n".join(compact)
     return caption[:980]
 
 
@@ -171,28 +176,49 @@ async def send_book_card(
 
     caption = build_book_caption(book)
 
-    fav_btn_text = "❤️ 收藏"
+    is_admin = False
+    is_fav = False
     if from_user is not None:
         session_factory = get_session_factory()
         async with session_factory() as session:
-            stmt = select(Favorite).where(
-                Favorite.user_id == from_user.id,
-                Favorite.book_id == book_id,
+            u = await session.scalar(select(User).where(User.id == from_user.id))
+            is_admin = bool(u and u.is_admin)
+            fav = await session.scalar(
+                select(Favorite).where(
+                    Favorite.user_id == from_user.id,
+                    Favorite.book_id == book_id,
+                )
             )
-            result = await session.execute(stmt)
-            if result.scalar_one_or_none():
-                fav_btn_text = "💔 取消收藏"
+            is_fav = fav is not None
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text=fav_btn_text, callback_data=f"book:fav:{book_id}"),
-            InlineKeyboardButton(text="⚠️ 举报", callback_data=f"book:report:{book_id}"),
-        ],
-        [
-            InlineKeyboardButton(text="🔁 再发一次", callback_data=f"book:download:{book_id}"),
-            InlineKeyboardButton(text="❌ 关闭", callback_data="close"),
-        ],
-    ])
+    if is_admin:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="删除标签", callback_data=f"book:tagdel:{book_id}"),
+                InlineKeyboardButton(text="举报书籍", callback_data=f"book:report:{book_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="编辑历史", callback_data=f"book:history:{book_id}"),
+                InlineKeyboardButton(text="❌关闭", callback_data="close"),
+                InlineKeyboardButton(text="◀️返回", callback_data="close"),
+            ],
+        ])
+    else:
+        fav_text = "❤️收藏书籍" if not is_fav else "💔取消收藏"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text=fav_text, callback_data=f"book:fav:{book_id}"),
+                InlineKeyboardButton(text="+加标签", callback_data=f"book:tagadd:{book_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="找相似", callback_data=f"book:similar:{book_id}"),
+                InlineKeyboardButton(text="*更多", callback_data=f"book:more:{book_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="❌关闭", callback_data="close"),
+                InlineKeyboardButton(text="◀️返回", callback_data="close"),
+            ],
+        ])
 
     sent = False
     if primary_ref and primary_ref.tg_file_id:
@@ -261,6 +287,16 @@ async def on_book_callback(callback: CallbackQuery):
         elif action.startswith("report:"):
             book_id = int(action.replace("report:", ""))
             await handle_report(callback, book_id)
+        elif action.startswith("tagdel:"):
+            await callback.answer("功能开发中...", show_alert=True)
+        elif action.startswith("tagadd:"):
+            await callback.answer("功能开发中...", show_alert=True)
+        elif action.startswith("similar:"):
+            await callback.answer("功能开发中...", show_alert=True)
+        elif action.startswith("more:"):
+            await callback.answer("功能开发中...", show_alert=True)
+        elif action.startswith("history:"):
+            await callback.answer("功能开发中...", show_alert=True)
         elif action.startswith("review:"):
             await callback.answer("功能开发中...", show_alert=True)
         elif action.startswith("share:"):

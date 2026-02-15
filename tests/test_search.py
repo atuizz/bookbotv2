@@ -177,8 +177,8 @@ class TestBuildSearchKeyboard:
             for btn in row:
                 all_texts.append(btn.text)
 
-        # 应该包含页码显示
-        assert any("/" in text for text in all_texts), "键盘应该显示页码"
+        # 应该包含页码选择按钮
+        assert any(("∨" in text) or text.isdigit() or text.startswith("...") for text in all_texts), "键盘应该显示页码"
 
     def test_keyboard_has_filters(self, mock_response):
         """测试键盘有筛选按钮"""
@@ -191,7 +191,7 @@ class TestBuildSearchKeyboard:
                 all_texts.append(btn.text)
 
         # 应该包含筛选相关按钮
-        filter_keywords = ["格式", "排序", "🔥", "🕐", "📦"]
+        filter_keywords = ["分级", "格式", "体积", "字数", "最热", "最新", "最大"]
         has_filter = any(
             any(kw in text for kw in filter_keywords)
             for text in all_texts

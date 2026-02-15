@@ -175,20 +175,21 @@ async def handle_document(message: Message):
         )
         return
 
-    # 发送处理中消息
     status_msg = await message.reply(
-        f"⏳ <b>正在处理上传...</b>\n\n"
-        f"📁 文件: <code>{file_name}</code>\n"
-        f"📏 大小: {format_file_size(file_size)}\n\n"
-        f"🔍 正在校验文件..."
+        f"文件：{file_name}\n"
+        f"大小：{format_file_size(file_size)}\n"
+        f"状态：加入队列，等待收录\n\n"
+        f"排队(1) 成功(0) 失败(0)\n"
+        f"发送 /info 查看书库统计和上传进度"
     )
 
     try:
         await status_msg.edit_text(
-            f"⏳ <b>正在处理上传...</b>\n\n"
-            f"📁 文件: <code>{file_name}</code>\n"
-            f"� 大小: {format_file_size(file_size)}\n\n"
-            f"⬇️ 正在下载文件..."
+            f"文件：{file_name}\n"
+            f"大小：{format_file_size(file_size)}\n"
+            f"状态：正在收录，请稍候...\n\n"
+            f"排队(1) 成功(0) 失败(0)\n"
+            f"发送 /info 查看书库统计和上传进度"
         )
 
         buffer = BytesIO()
@@ -355,23 +356,20 @@ async def handle_document(message: Message):
 
         if reward_coins == 0 and existing_book:
             await status_msg.edit_text(
-                f"⚠️ <b>文件已存在</b>\n\n"
-                f"{emoji} <b>{file_name}</b>\n"
-                f"📏 大小: {format_file_size(file_size)}\n"
-                f"🔍 SHA256: <code>{file_hash[:16]}...</code>\n\n"
-                f"💡 该文件已被上传过，本次不发放奖励。\n"
-                f"📚 已关联书籍ID: <code>{existing_book.id}</code>\n\n"
-                f"你可以直接搜索或从详情页下载。"
+                f"文件：{file_name}\n"
+                f"大小：{format_file_size(file_size)}\n"
+                f"状态：文件已存在，已跳过收录\n\n"
+                f"排队(0) 成功(1) 失败(0)\n"
+                f"发送 /info 查看书库统计和上传进度"
             )
         else:
-            suffix = "现在可以被搜索到了。" if index_ok else "已入库，索引稍后补建后即可搜索。"
+            status = "收录成功" if index_ok else "已入库，索引稍后补建后即可搜索"
             await status_msg.edit_text(
-                f"✅ <b>上传成功!</b>\n\n"
-                f"{emoji} <b>{file_name}</b>\n"
-                f"📏 大小: {format_file_size(file_size)}\n"
-                f"🔍 SHA256: <code>{file_hash[:16]}...</code>\n\n"
-                f"💰 <b>获得奖励:</b> +{reward_coins} 书币\n\n"
-                f"🎉 感谢你的分享! 文件已自动通过审核，{suffix}"
+                f"文件：{file_name}\n"
+                f"大小：{format_file_size(file_size)}\n"
+                f"状态：{status}\n\n"
+                f"排队(0) 成功(1) 失败(0)\n"
+                f"发送 /info 查看书库统计和上传进度"
             )
 
         logger.info(

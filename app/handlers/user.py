@@ -141,7 +141,7 @@ async def cmd_coins(message: Message):
     await status.edit_text(text)
 
 
-@user_router.message(Command("fav"))
+@user_router.message(Command(commands=["fav", "booklist"]))
 async def cmd_favorites(message: Message):
     """查看收藏列表"""
     tg_user = message.from_user

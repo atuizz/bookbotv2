@@ -157,7 +157,7 @@ def build_search_result_text(
 
     # 头部
     lines = [
-        f"🔍 <b>{query}</b> > Results {start_idx}-{end_idx} of {total} (in {processing_time:.2f}s)"
+        f"🔍 搜索作品:<b>{query}</b> Results {start_idx}-{end_idx} of {total} (用时 {processing_time:.2f} 秒)"
     ]
 
     # 当前筛选条件显示
@@ -177,8 +177,6 @@ def build_search_result_text(
         if filter_texts:
             lines.append(f"<i>[筛选: {' | '.join(filter_texts)}]</i>")
 
-    lines.append("")  # 空行
-
     # 结果列表
     bot_username = (bot_username or "").lstrip("@")
     for idx, book in enumerate(hits, start=start_idx):
@@ -186,26 +184,25 @@ def build_search_result_text(
         flag = ""
         if book.is_18plus:
             flag = " 🔞"
-        elif book.quality_score >= 90:
+        elif book.quality_score >= 9:
             flag = " ⭐"
 
         link = f"https://t.me/{bot_username}?start=book_{book.id}" if bot_username else ""
         title = f"<a href=\"{link}\">{book.title}</a>" if link else book.title
-        title_line = f"{idx:02d}. {title}{flag}"
+        prefix = "❓ " if (book.rating_score <= 0 and book.quality_score <= 0) else ""
+        title_line = f"{idx:02d}. {prefix}{title}{flag}"
         lines.append(title_line)
 
         # 格式、大小、字数、评分
         emoji = FORMAT_EMOJI.get(book.format.lower(), "📄")
         size_str = format_size(book.size)
         word_str = format_word_count(book.word_count)
-
-        # 评分显示 (1-10分转换为星星)
-        stars = get_rating_stars(book.rating_score)
-        rating_display = f"{stars} {book.rating_score:.1f}"
-
-        detail_line = f"{emoji} • {book.format.upper()} • {size_str} • {word_str}字 • {rating_display}"
+        rating_display = f"{book.rating_score:.2f}/{book.quality_score:.2f}"
+        detail_line = f"{emoji}· {book.format.upper()} · {size_str} · {word_str}字 · {rating_display}"
         lines.append(detail_line)
-        lines.append("")  # 空行分隔
+
+    lines.append("")
+    lines.append("💎 捐赠会员：提升等级获得书币，享受权限增值，优先体验功能")
 
     return "\n".join(lines)
 
@@ -232,43 +229,44 @@ def build_search_keyboard(
     keyboard: list[list[InlineKeyboardButton]] = []
 
     # 第1行：分页（选择页码）
+    page_row: list[InlineKeyboardButton] = []
     if total_pages <= 1:
-        keyboard.append([InlineKeyboardButton(text="1/1", callback_data="search:noop")])
+        page_row.append(InlineKeyboardButton(text="1∨", callback_data="search:noop"))
     else:
-        page_row: list[InlineKeyboardButton] = []
-        if total_pages <= 8:
-            pages = list(range(1, total_pages + 1))
-        else:
-            pages = [1, 2, 3, 4, 5, 6]
-        for p in pages:
+        visible = list(range(1, min(total_pages, 6) + 1))
+        for p in visible:
             text = f"{p}∨" if p == page else str(p)
             page_row.append(InlineKeyboardButton(text=text, callback_data=f"search:page:{p}"))
-        if total_pages > 8:
-            page_row.append(
-                InlineKeyboardButton(text=f"...{total_pages}", callback_data=f"search:page:{total_pages}")
-            )
-        page_row.append(InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="search:noop"))
-        keyboard.append(page_row)
+        if total_pages > 6:
+            page_row.append(InlineKeyboardButton(text=f"...{total_pages}", callback_data=f"search:page:{total_pages}"))
+    keyboard.append(page_row)
 
     # 第2行：筛选
+    is_18plus = filters.get("is_18plus")
+    if is_18plus is True:
+        rating_text = "分级:成人∨"
+    elif is_18plus is False:
+        rating_text = "分级:全年龄∨"
+    else:
+        rating_text = "分级∨"
+
     fmt = filters.get("format") or ""
-    fmt_text = f"格式:{fmt.upper()}" if fmt else "格式∨"
+    fmt_text = f"格式:{fmt.upper()}∨" if fmt else "格式∨"
 
     max_size = filters.get("max_size")
-    if max_size:
-        max_mb = int(max_size / (1024 * 1024))
-        size_text = f"体积≤{max_mb}M"
+    if isinstance(max_size, int) and max_size > 0:
+        size_text = f"体积≤{int(max_size / (1024 * 1024))}M∨"
     else:
         size_text = "体积∨"
 
     min_words = filters.get("min_word_count")
-    if min_words:
-        min_wan = int(min_words / 10000)
-        words_text = f"字数≥{min_wan}万"
+    if isinstance(min_words, int) and min_words > 0:
+        words_text = f"字数≥{int(min_words / 10000)}万∨"
     else:
         words_text = "字数∨"
 
     keyboard.append([
+        InlineKeyboardButton(text=rating_text, callback_data="search:filter:rating"),
         InlineKeyboardButton(text=fmt_text, callback_data="search:filter:format"),
         InlineKeyboardButton(text=size_text, callback_data="search:filter:size"),
         InlineKeyboardButton(text=words_text, callback_data="search:filter:words"),
@@ -307,7 +305,7 @@ def build_search_keyboard(
 # 命令处理器
 # ============================================================================
 
-@search_router.message(Command("s"))
+@search_router.message(Command(commands=["s", "book"]))
 async def cmd_search(message: Message):
     """
     处理 /s 搜索命令
@@ -391,6 +389,10 @@ async def perform_search(
             search_filters.format = filters["format"]
         if filters.get("is_18plus") is not None:
             search_filters.is_18plus = filters["is_18plus"]
+        if filters.get("max_size") is not None:
+            search_filters.max_size = filters["max_size"]
+        if filters.get("min_word_count") is not None:
+            search_filters.min_word_count = filters["min_word_count"]
 
         # 构建排序
         sort_mapping = {
@@ -576,7 +578,7 @@ async def handle_filter_callback(
 
         current_filters["sort"] = next_sort
 
-    elif filter_type == "adult":
+    elif filter_type in {"adult", "rating"}:
         # 循环切换成人内容筛选
         current = current_filters.get("is_18plus")
         if current is None:
@@ -660,6 +662,10 @@ async def perform_search_edit(
             search_filters.format = filters["format"]
         if filters.get("is_18plus") is not None:
             search_filters.is_18plus = filters["is_18plus"]
+        if filters.get("max_size") is not None:
+            search_filters.max_size = filters["max_size"]
+        if filters.get("min_word_count") is not None:
+            search_filters.min_word_count = filters["min_word_count"]
 
         # 构建排序
         sort_mapping = {
