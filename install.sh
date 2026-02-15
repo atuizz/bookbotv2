@@ -385,9 +385,11 @@ else
     fi
 
     if [ -d "$PROJECT_DIR/.git" ]; then
-        info "项目目录已存在 Git 仓库，执行 git pull..."
+        info "项目目录已存在 Git 仓库，正在强制更新..."
         cd "$PROJECT_DIR"
-        git pull || warn "Git pull 失败，可能存在冲突或网络问题"
+        # 强制更新到最新代码，覆盖本地 manage.sh (如果被修改过)
+        git fetch --all || warn "Git fetch 失败，请检查网络"
+        git reset --hard origin/master || warn "Git reset 失败，可能无法获取最新 manage.sh"
     else
         info "正在克隆 Git 仓库..."
         # 尝试清理目标目录（如果存在但不是git仓库）
@@ -715,6 +717,14 @@ chmod +x "$PROJECT_DIR/manage.sh"
 
 info "初始化数据库..."
 cd "$PROJECT_DIR"
+# 最后一道防线：确保 .env 文件绝对正确
+sed -i 's/^BOT_NAME=\([^"]\)/BOT_NAME="\1"/' .env || true
+sed -i 's/V2$/V2"/' .env || true # 修复结尾引号
+# 直接暴力替换，如果上面正则失效
+if grep -q "BOT_NAME=搜书神器 V2" .env; then
+    sed -i 's/BOT_NAME=搜书神器 V2/BOT_NAME="搜书神器 V2"/' .env
+fi
+
 if ./manage.sh migrate; then
     success "数据库初始化成功"
 else
