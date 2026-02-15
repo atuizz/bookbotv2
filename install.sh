@@ -40,7 +40,15 @@ DB_DEFAULT_PASSWORD="password"
 env_get() {
     local key="$1"
     if [[ -f "$PROJECT_DIR/.env" ]]; then
-        grep -E "^${key}=" "$PROJECT_DIR/.env" | tail -n 1 | cut -d= -f2-
+        local value
+        value=$(grep -E "^${key}=" "$PROJECT_DIR/.env" | tail -n 1 | cut -d= -f2-)
+        value=${value//$'\r'/}
+        if [[ "${value:0:1}" == "\"" && "${value: -1}" == "\"" ]]; then
+            value="${value:1:-1}"
+        elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+            value="${value:1:-1}"
+        fi
+        echo "$value"
     fi
 }
 
@@ -436,11 +444,18 @@ ENVIRONMENT=production
 EOF
 
     chmod 640 "$PROJECT_DIR/.env"
+    if [[ -n "$SUDO_USER" ]]; then
+        chown "$SUDO_USER":"$SUDO_USER" "$PROJECT_DIR/.env"
+    fi
     success "环境配置文件创建完成"
     warn "请编辑 .env 文件并填写正确的配置值"
 else
     info "环境配置文件已存在，跳过创建"
     sed -i 's/\r$//' "$PROJECT_DIR/.env"
+    if [[ -n "$SUDO_USER" ]]; then
+        chown "$SUDO_USER":"$SUDO_USER" "$PROJECT_DIR/.env"
+        chmod 640 "$PROJECT_DIR/.env"
+    fi
     if ! grep -q "^BOT_TOKEN=" "$PROJECT_DIR/.env"; then
         echo -e "${yellow}"
         read -p "请输入您的 Telegram Bot Token: " USER_BOT_TOKEN

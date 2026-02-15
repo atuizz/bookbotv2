@@ -27,7 +27,10 @@ SYSTEMD_DIR="/etc/systemd/system"
 
 # 检查 .env 文件
 if [[ -f "$PROJECT_DIR/.env" ]]; then
-    export $(grep -v '^#' "$PROJECT_DIR/.env" | xargs) 2>/dev/null || true
+    sed -i 's/\r$//' "$PROJECT_DIR/.env"
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
 fi
 
 # ============================================
