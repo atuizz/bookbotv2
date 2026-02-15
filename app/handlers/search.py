@@ -58,6 +58,10 @@ class SearchCache:
         data['_timestamp'] = datetime.now()
         self._cache[user_id] = data
 
+    def __setitem__(self, key: int, value: Dict[str, Any]) -> None:
+        """支持 [] 赋值操作"""
+        self.set(key, value)
+
     def clear(self, user_id: Optional[int] = None) -> None:
         """清除缓存"""
         if user_id is None:
@@ -429,12 +433,12 @@ async def perform_search(
         )
 
         # 保存用户搜索状态到缓存
-        _search_cache[user_id] = {
+        _search_cache.set(user_id, {
             "query": query,
             "page": page,
             "filters": filters.copy(),
             "last_response": response,
-        }
+        })
 
         # 删除"搜索中"消息
         await status_message.delete()
@@ -580,7 +584,12 @@ async def handle_filter_callback(
         return
 
     # 更新缓存
-    _search_cache[user_id]["filters"] = current_filters
+    # _search_cache[user_id]["filters"] = current_filters
+    # 使用 get 获取并更新
+    cache_data = _search_cache.get(user_id)
+    if cache_data:
+        cache_data["filters"] = current_filters
+        _search_cache.set(user_id, cache_data)
 
     # 重新搜索 (回到第1页)
     await callback.message.edit_text("🔍 应用筛选中...")
@@ -636,12 +645,12 @@ async def perform_search_edit(
         )
 
         # 更新缓存
-        _search_cache[user_id] = {
+        _search_cache.set(user_id, {
             "query": query,
             "page": page,
             "filters": filters.copy(),
             "last_response": response,
-        }
+        })
 
         if response.total == 0:
             await message.edit_text(
