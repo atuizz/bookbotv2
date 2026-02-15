@@ -121,11 +121,7 @@ async def on_book_callback(callback: CallbackQuery):
 
 async def show_book_detail(callback: CallbackQuery, book_id: int):
     """
-    显示书籍详情并发送文件
-
-    关键改进: 发送两条消息:
-    1. 文件消息 (包含实际的文件附件)
-    2. 详情消息 (书籍信息和操作按钮)
+    显示书籍详情
     """
     await callback.answer("⏳ 加载中...")
     try:
@@ -142,28 +138,6 @@ async def show_book_detail(callback: CallbackQuery, book_id: int):
     file_refs = list(book.file.file_refs) if book.file else []
     primary_ref = pick_primary_file_ref(file_refs)
     backup_ref = pick_backup_ref(file_refs)
-
-    file_sent = False
-    if primary_ref:
-        try:
-            await callback.bot.send_document(
-                chat_id=callback.message.chat.id,
-                document=primary_ref.tg_file_id,
-            )
-            file_sent = True
-        except Exception as e:
-            logger.warning(f"直接发送文件失败: {e}")
-
-    if not file_sent and backup_ref and backup_ref.channel_id and backup_ref.message_id:
-        try:
-            await callback.bot.forward_message(
-                chat_id=callback.message.chat.id,
-                from_chat_id=backup_ref.channel_id,
-                message_id=backup_ref.message_id,
-            )
-            file_sent = True
-        except Exception as e:
-            logger.warning(f"从备份频道转发失败: {e}")
 
     # 构建详情文本
     tags = [bt.tag.name for bt in (book.book_tags or []) if bt.tag and bt.tag.name]
@@ -199,48 +173,46 @@ async def show_book_detail(callback: CallbackQuery, book_id: int):
     )
 
     # 构建操作键盘
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
+    keyboard_rows: list[list[InlineKeyboardButton]] = []
+    can_download = bool(primary_ref or (backup_ref and backup_ref.channel_id and backup_ref.message_id))
+    if can_download:
+        keyboard_rows.append([
             InlineKeyboardButton(
                 text="⬇️ 立即下载",
-                callback_data=f"book:download:{book_id}"
+                callback_data=f"book:download:{book_id}",
             ),
-        ],
-        [
-            InlineKeyboardButton(
-                text="❤️ 收藏",
-                callback_data=f"book:fav:{book_id}"
-            ),
-            InlineKeyboardButton(
-                text="📝 评论",
-                callback_data=f"book:review:{book_id}"
-            ),
-        ],
-        [
-            InlineKeyboardButton(
-                text="⚠️ 举报",
-                callback_data=f"book:report:{book_id}"
-            ),
-            InlineKeyboardButton(
-                text="🔗 分享",
-                callback_data=f"book:share:{book_id}"
-            ),
-        ],
-        [
-            InlineKeyboardButton(text="◀️ 返回搜索", callback_data="goto:search"),
-        ],
+        ])
+    else:
+        detail_text += "\n\n⚠️ <b>文件暂不可用</b>\n请稍后重试或联系管理员"
+
+    keyboard_rows.append([
+        InlineKeyboardButton(
+            text="❤️ 收藏",
+            callback_data=f"book:fav:{book_id}",
+        ),
+        InlineKeyboardButton(
+            text="📝 评论",
+            callback_data=f"book:review:{book_id}",
+        ),
     ])
+    keyboard_rows.append([
+        InlineKeyboardButton(
+            text="⚠️ 举报",
+            callback_data=f"book:report:{book_id}",
+        ),
+        InlineKeyboardButton(
+            text="🔗 分享",
+            callback_data=f"book:share:{book_id}",
+        ),
+    ])
+    keyboard_rows.append([
+        InlineKeyboardButton(text="❌ 关闭", callback_data="close"),
+        InlineKeyboardButton(text="◀️ 返回", callback_data="close"),
+    ])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
 
     try:
-        if file_sent:
-            # 如果文件已发送，编辑原消息显示详情
-            await callback.message.edit_text(detail_text, reply_markup=keyboard)
-        else:
-            # 文件发送失败，显示错误信息
-            error_text = detail_text + "\n\n⚠️ <b>文件暂时无法下载</b>\n请稍后重试或联系管理员"
-            await callback.message.edit_text(error_text, reply_markup=keyboard)
-
-        await callback.answer()
+        await callback.message.answer(detail_text, reply_markup=keyboard)
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
             await callback.answer()
