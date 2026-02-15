@@ -334,9 +334,15 @@ else
     fi
 
     if [ -d "$PROJECT_DIR/.git" ]; then
-        info "项目目录已存在 Git 仓库，执行 git pull..."
+        info "项目目录已存在 Git 仓库，正在强制更新..."
+        
+        # 修复 git safe.directory 问题 (解决 dubious ownership 错误)
+        if ! git config --global --get-all safe.directory | grep -q "^$PROJECT_DIR$"; then
+            git config --global --add safe.directory "$PROJECT_DIR"
+        fi
+        
         cd "$PROJECT_DIR"
-        git pull || warn "Git pull 失败，可能存在冲突或网络问题"
+        # 强制更新到最新代码，覆盖本地 manage.sh (如果被修改过)
     else
         info "正在克隆 Git 仓库..."
         # 尝试清理目标目录（如果存在但不是git仓库）
