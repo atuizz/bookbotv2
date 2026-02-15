@@ -352,7 +352,7 @@ async def cmd_search(message: Message):
     await perform_search(message, query, user_id=message.from_user.id)
 
 
-@search_router.message(F.text)
+@search_router.message(F.text & ~F.text.startswith("/"))
 async def text_search(message: Message):
     """
     处理直接发送的文本作为搜索关键词
@@ -360,10 +360,6 @@ async def text_search(message: Message):
     排除命令和太短的文本
     """
     text = message.text.strip()
-
-    # 排除命令
-    if text.startswith("/"):
-        return
 
     # 排除太短的文本（可能是误触）
     if len(text) < 2:
@@ -681,4 +677,3 @@ async def perform_search_edit(
             f"错误信息: <code>{str(e)[:100]}</code>\n\n"
             f"请稍后再试或联系管理员"
         )
-
