@@ -12,6 +12,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.strategy import FSMStrategy
+from aiogram.types import ErrorEvent
 
 # 确保项目根目录在路径中
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -99,6 +100,19 @@ async def main() -> None:
     # 注册启动和关闭钩子
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
+
+    async def on_error(event: ErrorEvent):
+        logger.error(f"未捕获异常: {event.exception}", exc_info=event.exception)
+        try:
+            update = event.update
+            if update.message:
+                await update.message.answer("❌ 当前服务繁忙，请稍后重试")
+            elif update.callback_query:
+                await update.callback_query.answer("❌ 操作失败，请稍后重试", show_alert=True)
+        except Exception:
+            return
+
+    dp.errors.register(on_error)
 
     # 注册所有处理器
     register_handlers(dp)
