@@ -717,7 +717,7 @@ WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/.venv/bin
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONFAULTHANDLER=1
-ExecStartPre=/bin/bash -lc 'cd $PROJECT_DIR && echo "VERSION $(git rev-parse --short HEAD 2>/dev/null) $(git show -s --format=%ci 2>/dev/null)"'
+ExecStartPre=/bin/bash -lc 'cd $PROJECT_DIR && echo "VERSION \$(git rev-parse --short HEAD 2>/dev/null) \$(git show -s --format=%ci 2>/dev/null)"'
 ExecStart=$PROJECT_DIR/.venv/bin/python $PROJECT_DIR/run_bot.py
 Restart=always
 RestartSec=10
@@ -741,7 +741,7 @@ WorkingDirectory=$PROJECT_DIR
 Environment=PATH=$PROJECT_DIR/.venv/bin
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONFAULTHANDLER=1
-ExecStartPre=/bin/bash -lc 'cd $PROJECT_DIR && echo "VERSION $(git rev-parse --short HEAD 2>/dev/null) $(git show -s --format=%ci 2>/dev/null)"'
+ExecStartPre=/bin/bash -lc 'cd $PROJECT_DIR && echo "VERSION \$(git rev-parse --short HEAD 2>/dev/null) \$(git show -s --format=%ci 2>/dev/null)"'
 ExecStart=$PROJECT_DIR/.venv/bin/arq app.worker.WorkerSettings
 Restart=always
 RestartSec=10
