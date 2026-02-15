@@ -534,6 +534,25 @@ if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet postgresql; then
         info "创建数据库 ${DB_NAME_EFFECTIVE}..."
         sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME_EFFECTIVE} OWNER ${DB_USER_EFFECTIVE};"
     fi
+    if ! PGPASSWORD="${DB_PASSWORD_EFFECTIVE}" psql -h "${DB_HOST_EFFECTIVE}" -p "${DB_PORT_EFFECTIVE}" -U "${DB_USER_EFFECTIVE}" -d "${DB_NAME_EFFECTIVE}" -c "select 1" >/dev/null 2>&1; then
+        warn "检测到数据库连接失败，正在自动修复密码..."
+        DB_PASSWORD_EFFECTIVE="bookbot$(date +%s)${RANDOM}"
+        DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
+        sudo -u postgres psql -c "ALTER USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';"
+        if grep -q "^DB_PASSWORD=" "$PROJECT_DIR/.env"; then
+            sed -i "s/^DB_PASSWORD=.*/DB_PASSWORD=${DB_PASSWORD_EFFECTIVE}/" "$PROJECT_DIR/.env"
+        else
+            echo "DB_PASSWORD=${DB_PASSWORD_EFFECTIVE}" >> "$PROJECT_DIR/.env"
+        fi
+        if grep -q "^DATABASE_URL=" "$PROJECT_DIR/.env"; then
+            sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://${DB_USER_EFFECTIVE}:${DB_PASSWORD_EFFECTIVE}@${DB_HOST_EFFECTIVE}:${DB_PORT_EFFECTIVE}/${DB_NAME_EFFECTIVE}#" "$PROJECT_DIR/.env"
+        else
+            echo "DATABASE_URL=postgresql+asyncpg://${DB_USER_EFFECTIVE}:${DB_PASSWORD_EFFECTIVE}@${DB_HOST_EFFECTIVE}:${DB_PORT_EFFECTIVE}/${DB_NAME_EFFECTIVE}" >> "$PROJECT_DIR/.env"
+        fi
+        if ! PGPASSWORD="${DB_PASSWORD_EFFECTIVE}" psql -h "${DB_HOST_EFFECTIVE}" -p "${DB_PORT_EFFECTIVE}" -U "${DB_USER_EFFECTIVE}" -d "${DB_NAME_EFFECTIVE}" -c "select 1" >/dev/null 2>&1; then
+            error "数据库认证仍失败，请检查 PostgreSQL 的认证配置"
+        fi
+    fi
     success "PostgreSQL 配置完成"
 else
     if [[ $HAS_SYSTEMD -eq 1 ]]; then
