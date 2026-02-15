@@ -27,6 +27,11 @@ SYSTEMD_DIR="/etc/systemd/system"
 
 # 检查 .env 文件
 if [[ -f "$PROJECT_DIR/.env" ]]; then
+    # 预处理：修复可能缺少引号的带空格变量
+    if grep -q "^BOT_NAME=.* .*$" "$PROJECT_DIR/.env" && ! grep -q "^BOT_NAME=\".*\"$" "$PROJECT_DIR/.env"; then
+        sed -i 's/^BOT_NAME=\(.*\)$/BOT_NAME="\1"/' "$PROJECT_DIR/.env"
+    fi
+
     sed -i 's/\r$//' "$PROJECT_DIR/.env"
     sed -i 's/[[:space:]]*$//' "$PROJECT_DIR/.env"
     set -a

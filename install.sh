@@ -519,12 +519,11 @@ else
         echo "BOT_TOKEN=$USER_BOT_TOKEN" >> "$PROJECT_DIR/.env"
     fi
     # 强制修复可能损坏的 BOT_NAME
-    if grep -q "^BOT_NAME=" "$PROJECT_DIR/.env"; then
-        # 如果存在且未加引号，强制加引号
-        sed -i 's/^BOT_NAME=.*$/BOT_NAME="搜书神器 V2"/' "$PROJECT_DIR/.env"
-    else
-        echo 'BOT_NAME="搜书神器 V2"' >> "$PROJECT_DIR/.env"
-    fi
+    # 先删除旧的 BOT_NAME 行
+    sed -i '/^BOT_NAME=/d' "$PROJECT_DIR/.env"
+    # 重新添加正确的行
+    echo 'BOT_NAME="搜书神器 V2"' >> "$PROJECT_DIR/.env"
+    
     if ! grep -q "^BOT_USERNAME=" "$PROJECT_DIR/.env"; then
         echo -e "${yellow}"
         read -p "请输入您的 Telegram Bot 用户名 (不含@): " USER_BOT_USERNAME
