@@ -213,12 +213,21 @@ step "步骤 2.5: 安装和配置服务"
 
 # 1. 配置 Meilisearch
 if ! command -v meilisearch &> /dev/null; then
-    info "安装 Meilisearch..."
-    curl -L https://install.meilisearch.com | sh
-    mv meilisearch /usr/local/bin/
-    chmod +x /usr/local/bin/meilisearch
-    success "Meilisearch 安装完成"
-fi
+        # 尝试查找是否已经存在于当前目录或 /usr/local/bin
+        if [[ -f "/usr/local/bin/meilisearch" ]]; then
+            info "发现 Meilisearch 已安装在 /usr/local/bin"
+        elif [[ -f "./meilisearch" ]]; then
+            info "发现当前目录存在 Meilisearch，正在移动..."
+            mv ./meilisearch /usr/local/bin/
+            chmod +x /usr/local/bin/meilisearch
+        else
+            info "安装 Meilisearch..."
+            curl -L https://install.meilisearch.com | sh
+            mv meilisearch /usr/local/bin/
+            chmod +x /usr/local/bin/meilisearch
+            success "Meilisearch 安装完成"
+        fi
+    fi
 
 # 配置 Meilisearch Systemd
 if [[ $HAS_SYSTEMD -eq 1 && ! -f /etc/systemd/system/meilisearch.service ]]; then

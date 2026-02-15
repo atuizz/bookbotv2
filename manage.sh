@@ -105,12 +105,17 @@ check_services() {
         log_success "Meilisearch 运行正常"
     else
         log_warning "Meilisearch 未响应，尝试重启服务..."
+        # 检查端口占用
+        if ss -lnt 2>/dev/null | grep -q ":7700"; then
+            log_warning "端口 7700 已被占用，可能是服务卡死或未正确响应"
+        fi
+        
         sudo systemctl restart meilisearch 2>/dev/null || true
         sleep 5
         if curl -s "${MEILI_HOST:-http://localhost:7700}/health" 2>/dev/null | grep -q "available"; then
             log_success "Meilisearch 重启后运行正常"
         else
-            log_error "Meilisearch 未启动或无法连接"
+            log_error "Meilisearch 未启动或无法连接 (请检查 systemctl status meilisearch)"
             all_ok=false
         fi
     fi
