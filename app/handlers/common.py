@@ -14,6 +14,7 @@ from app.core.logger import logger
 from app.core.database import get_session_factory
 from app.core.models import User
 from sqlalchemy import select
+from app.handlers.book_detail import send_book_card
 
 common_router = Router(name="common")
 
@@ -21,6 +22,24 @@ common_router = Router(name="common")
 @common_router.message(Command("start"))
 async def cmd_start(message: Message):
     """处理 /start 命令"""
+    payload = ""
+    parts = (message.text or "").split(maxsplit=1)
+    if len(parts) > 1:
+        payload = parts[1].strip()
+    if payload.startswith("book_"):
+        try:
+            book_id = int(payload.replace("book_", "").strip())
+        except ValueError:
+            await message.answer("⚠️ 无效的链接参数")
+            return
+        await send_book_card(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            book_id=book_id,
+            from_user=message.from_user,
+        )
+        return
+
     welcome_text = f"""
 👋 欢迎使用 <b>搜书神器 V2</b>!
 

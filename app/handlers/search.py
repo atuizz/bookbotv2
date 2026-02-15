@@ -19,11 +19,13 @@ from aiogram.types import (
 from aiogram.exceptions import TelegramAPIError
 
 from app.core.logger import logger
+from app.core.config import get_settings
 from app.services.search import (
     get_search_service,
     SearchFilters,
     SearchResponse,
 )
+from app.handlers.book_detail import send_book_card
 
 search_router = Router(name="search")
 
@@ -129,6 +131,7 @@ def get_rating_stars(score: float) -> str:
 
 def build_search_result_text(
     response: SearchResponse,
+    bot_username: str = "",
     user_filters: Optional[Dict] = None,
 ) -> str:
     """
@@ -177,6 +180,7 @@ def build_search_result_text(
     lines.append("")  # 空行
 
     # 结果列表
+    bot_username = (bot_username or "").lstrip("@")
     for idx, book in enumerate(hits, start=start_idx):
         # 书名和Flag
         flag = ""
@@ -185,7 +189,9 @@ def build_search_result_text(
         elif book.quality_score >= 90:
             flag = " ⭐"
 
-        title_line = f"{idx}. {book.title}{flag}"
+        link = f"https://t.me/{bot_username}?start=book_{book.id}" if bot_username else ""
+        title = f"<a href=\"{link}\">{book.title}</a>" if link else book.title
+        title_line = f"{idx:02d}. {title}{flag}"
         lines.append(title_line)
 
         # 格式、大小、字数、评分
@@ -223,100 +229,76 @@ def build_search_keyboard(
     total = response.total
     total_pages = response.total_pages
 
-    keyboard = []
+    keyboard: list[list[InlineKeyboardButton]] = []
 
-    # 结果按钮 (最多10个，按钮文案保持 1..N，但回调携带 book_id)
-    start_idx = (page - 1) * per_page + 1
-
-    BUTTONS_PER_ROW = 5
-    row1: List[InlineKeyboardButton] = []
-    row2: List[InlineKeyboardButton] = []
-    for idx, book in enumerate(response.hits):
-        display_no = start_idx + idx
-        btn = InlineKeyboardButton(
-            text=str(display_no),
-            callback_data=f"book:detail:{book.id}",
-        )
-        if idx < BUTTONS_PER_ROW:
-            row1.append(btn)
-        else:
-            row2.append(btn)
-
-    if row1:
-        keyboard.append(row1)
-    if row2:
-        keyboard.append(row2)
-
-    # 导航和筛选按钮
-    nav_row = []
-
-    # 上一页/下一页
-    if page > 1:
-        nav_row.append(InlineKeyboardButton(
-            text="◀️ 上一页",
-            callback_data=f"search:page:{page-1}"
-        ))
-
-    # 页码指示
-    nav_row.append(InlineKeyboardButton(
-        text=f"{page}/{total_pages or 1}",
-        callback_data="search:noop"
-    ))
-
-    if page < total_pages:
-        nav_row.append(InlineKeyboardButton(
-            text="下一页 ▶️",
-            callback_data=f"search:page:{page+1}"
-        ))
-
-    if nav_row:
-        keyboard.append(nav_row)
-
-    # 筛选和排序按钮
-    filter_row = []
-
-    # 格式筛选
-    current_format = filters.get("format", "")
-    format_text = f"格式:{current_format.upper()}" if current_format else "📋格式"
-    filter_row.append(InlineKeyboardButton(
-        text=format_text,
-        callback_data="search:filter:format"
-    ))
-
-    # 排序
-    sort_map = {
-        "popular": "🔥热度",
-        "newest": "🕐最新",
-        "largest": "📦最大",
-    }
-    current_sort = filters.get("sort", "popular")
-    sort_text = sort_map.get(current_sort, "🔥热度")
-    filter_row.append(InlineKeyboardButton(
-        text=sort_text,
-        callback_data="search:filter:sort"
-    ))
-
-    # 成人内容筛选
-    is_18plus = filters.get("is_18plus")
-    if is_18plus is True:
-        adult_text = "🔞成人"
-    elif is_18plus is False:
-        adult_text = "✅全年龄"
+    # 第1行：分页（选择页码）
+    if total_pages <= 1:
+        keyboard.append([InlineKeyboardButton(text="1/1", callback_data="search:noop")])
     else:
-        adult_text = "🔞/✅"
-    filter_row.append(InlineKeyboardButton(
-        text=adult_text,
-        callback_data="search:filter:adult"
-    ))
+        page_row: list[InlineKeyboardButton] = []
+        if total_pages <= 8:
+            pages = list(range(1, total_pages + 1))
+        else:
+            pages = [1, 2, 3, 4, 5, 6]
+        for p in pages:
+            text = f"{p}∨" if p == page else str(p)
+            page_row.append(InlineKeyboardButton(text=text, callback_data=f"search:page:{p}"))
+        if total_pages > 8:
+            page_row.append(
+                InlineKeyboardButton(text=f"...{total_pages}", callback_data=f"search:page:{total_pages}")
+            )
+        page_row.append(InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="search:noop"))
+        keyboard.append(page_row)
 
-    keyboard.append(filter_row)
+    # 第2行：筛选
+    fmt = filters.get("format") or ""
+    fmt_text = f"格式:{fmt.upper()}" if fmt else "格式∨"
 
-    # 清除筛选按钮
-    if filters:
-        keyboard.append([InlineKeyboardButton(
-            text="🗑️ 清除所有筛选",
-            callback_data="search:filter:clear"
-        )])
+    max_size = filters.get("max_size")
+    if max_size:
+        max_mb = int(max_size / (1024 * 1024))
+        size_text = f"体积≤{max_mb}M"
+    else:
+        size_text = "体积∨"
+
+    min_words = filters.get("min_word_count")
+    if min_words:
+        min_wan = int(min_words / 10000)
+        words_text = f"字数≥{min_wan}万"
+    else:
+        words_text = "字数∨"
+
+    keyboard.append([
+        InlineKeyboardButton(text=fmt_text, callback_data="search:filter:format"),
+        InlineKeyboardButton(text=size_text, callback_data="search:filter:size"),
+        InlineKeyboardButton(text=words_text, callback_data="search:filter:words"),
+    ])
+
+    # 第3行：排序（点按选择）
+    sort_key = filters.get("sort", "popular")
+    keyboard.append([
+        InlineKeyboardButton(
+            text="最热↓" if sort_key == "popular" else "最热",
+            callback_data="search:sort:popular",
+        ),
+        InlineKeyboardButton(
+            text="最新↓" if sort_key == "newest" else "最新",
+            callback_data="search:sort:newest",
+        ),
+        InlineKeyboardButton(
+            text="最大↓" if sort_key == "largest" else "最大",
+            callback_data="search:sort:largest",
+        ),
+    ])
+
+    # 第4/5行：按序号下载（1-10）
+    d1: list[InlineKeyboardButton] = []
+    d2: list[InlineKeyboardButton] = []
+    for i in range(1, 11):
+        btn = InlineKeyboardButton(text=str(i), callback_data=f"search:dl:{i}")
+        (d1 if i <= 5 else d2).append(btn)
+    keyboard.append(d1)
+    keyboard.append(d2)
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -450,7 +432,7 @@ async def perform_search(
             return
 
         # 构建结果文本
-        result_text = build_search_result_text(response, filters)
+        result_text = build_search_result_text(response, get_settings().bot_username, filters)
 
         # 构建键盘
         keyboard = build_search_keyboard(response, user_id, filters)
@@ -517,6 +499,41 @@ async def on_search_callback(callback: CallbackQuery):
             filter_type = parts[2] if len(parts) > 2 else ""
             await handle_filter_callback(callback, filter_type, query, filters)
 
+        elif action == "sort":
+            sort_key = parts[2] if len(parts) > 2 else ""
+            if sort_key not in {"popular", "newest", "largest"}:
+                await callback.answer("⚠️ 无效的排序", show_alert=True)
+                return
+            filters["sort"] = sort_key
+            cache_data = _search_cache.get(user_id)
+            if cache_data:
+                cache_data["filters"] = filters
+                _search_cache.set(user_id, cache_data)
+            await callback.message.edit_text("🔍 应用排序中...")
+            await perform_search_edit(
+                callback.message,
+                query,
+                user_id,
+                page=1,
+                filters=filters,
+            )
+            await callback.answer()
+
+        elif action == "dl":
+            idx = int(parts[2]) if len(parts) > 2 else 0
+            last_response: SearchResponse = cache.get("last_response")
+            if not last_response or idx < 1 or idx > len(last_response.hits):
+                await callback.answer("⚠️ 序号无效或已过期", show_alert=True)
+                return
+            book_id = last_response.hits[idx - 1].id
+            await send_book_card(
+                bot=callback.bot,
+                chat_id=callback.message.chat.id,
+                book_id=book_id,
+                from_user=callback.from_user,
+            )
+            await callback.answer("✅ 已发送", show_alert=False)
+
         elif action == "noop":
             # 无操作
             await callback.answer()
@@ -568,6 +585,28 @@ async def handle_filter_callback(
             current_filters["is_18plus"] = True
         else:
             current_filters["is_18plus"] = None
+
+    elif filter_type == "size":
+        sizes = [None, 1, 5, 20, 50, 100]
+        current = current_filters.get("max_size")
+        current_mb = int(current / (1024 * 1024)) if isinstance(current, int) and current > 0 else None
+        try:
+            idx = sizes.index(current_mb)
+            next_mb = sizes[(idx + 1) % len(sizes)]
+        except ValueError:
+            next_mb = sizes[1]
+        current_filters["max_size"] = next_mb * 1024 * 1024 if next_mb else None
+
+    elif filter_type == "words":
+        words = [None, 1, 5, 10, 30, 50]
+        current = current_filters.get("min_word_count")
+        current_wan = int(current / 10000) if isinstance(current, int) and current > 0 else None
+        try:
+            idx = words.index(current_wan)
+            next_wan = words[(idx + 1) % len(words)]
+        except ValueError:
+            next_wan = words[1]
+        current_filters["min_word_count"] = next_wan * 10000 if next_wan else None
 
     elif filter_type == "clear":
         # 清除所有筛选
@@ -658,7 +697,7 @@ async def perform_search_edit(
             return
 
         # 构建结果文本
-        result_text = build_search_result_text(response, filters)
+        result_text = build_search_result_text(response, get_settings().bot_username, filters)
 
         # 构建键盘
         keyboard = build_search_keyboard(response, user_id, filters)

@@ -21,6 +21,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
+from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 
 from app.core.logger import logger
@@ -88,6 +89,158 @@ async def get_book_from_db(book_id: int) -> Optional[Book]:
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
+def build_book_caption(book: Book) -> str:
+    tags = [bt.tag.name for bt in (book.book_tags or []) if bt.tag and bt.tag.name]
+    tags_display = " ".join([f"#{t}" for t in tags[:30]]) if tags else "暂无标签"
+
+    description = (book.description or "暂无简介").strip()
+    if len(description) > 350:
+        description = description[:350] + "..."
+
+    uploader_name = "未知"
+    if book.uploader:
+        uploader_name = (
+            book.uploader.username
+            or f"{book.uploader.first_name}{book.uploader.last_name or ''}".strip()
+            or "未知"
+        )
+
+    file_format = book.file.format.value if book.file and book.file.format else "未知"
+    file_size = format_size(book.file.size) if book.file else "未知"
+    word_count = book.file.word_count if book.file else 0
+    display_filename = f"{book.title}.{book.file.extension}" if book.file and book.file.extension else book.title
+
+    lines = [
+        f"📄 <b>{display_filename}</b>",
+        "",
+        f"书名：<b>{book.title}</b>",
+        f"作者：{book.author or 'Unknown'}",
+        f"格式：{file_format.upper() if file_format != '未知' else '未知'} | 大小：{file_size} | 字数：{word_count}",
+        "",
+        f"统计：{book.view_count}浏览｜{book.download_count}下载｜{book.favorite_count}收藏",
+        f"评分：{book.rating_score:.2f}({book.rating_count}人)｜质量：{book.quality_score:.2f}",
+        "",
+        f"标签：{tags_display}",
+        "",
+        f"简介：{description}",
+        "",
+        f"创建：{format_date(book.created_at)}",
+        f"更新：{format_date(book.updated_at)}",
+        f"上传：{uploader_name}",
+    ]
+    caption = "\n".join(lines)
+    if len(caption) <= 980:
+        return caption
+
+    lines = [line for line in lines if not line.startswith("简介：")]
+    caption = "\n".join(lines)
+    if len(caption) <= 980:
+        return caption
+
+    while len(caption) > 980 and len(lines) > 6:
+        lines.pop(-2)
+        caption = "\n".join(lines)
+    return caption[:980]
+
+
+async def send_book_card(
+    *,
+    bot: Bot,
+    chat_id: int,
+    book_id: int,
+    from_user=None,
+) -> None:
+    try:
+        book = await asyncio.wait_for(get_book_from_db(book_id), timeout=5)
+    except Exception as e:
+        logger.warning(f"获取书籍失败: {e}")
+        await bot.send_message(chat_id, "❌ 当前服务繁忙，请稍后重试")
+        return
+
+    if not book or not book.file:
+        await bot.send_message(chat_id, "❌ 书籍或文件信息不存在")
+        return
+
+    file_refs = list(book.file.file_refs) if book.file else []
+    primary_ref = pick_primary_file_ref(file_refs)
+    backup_ref = pick_backup_ref(file_refs)
+
+    if not primary_ref and not backup_ref:
+        await bot.send_message(chat_id, "❌ 文件暂不可用")
+        return
+
+    caption = build_book_caption(book)
+
+    fav_btn_text = "❤️ 收藏"
+    if from_user is not None:
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            stmt = select(Favorite).where(
+                Favorite.user_id == from_user.id,
+                Favorite.book_id == book_id,
+            )
+            result = await session.execute(stmt)
+            if result.scalar_one_or_none():
+                fav_btn_text = "💔 取消收藏"
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text=fav_btn_text, callback_data=f"book:fav:{book_id}"),
+            InlineKeyboardButton(text="⚠️ 举报", callback_data=f"book:report:{book_id}"),
+        ],
+        [
+            InlineKeyboardButton(text="🔁 再发一次", callback_data=f"book:download:{book_id}"),
+            InlineKeyboardButton(text="❌ 关闭", callback_data="close"),
+        ],
+    ])
+
+    sent = False
+    if primary_ref and primary_ref.tg_file_id:
+        try:
+            await bot.send_document(
+                chat_id=chat_id,
+                document=primary_ref.tg_file_id,
+                caption=caption,
+                reply_markup=keyboard,
+            )
+            sent = True
+        except Exception as e:
+            logger.warning(f"发送文件失败: {e}")
+
+    if not sent and backup_ref and backup_ref.channel_id and backup_ref.message_id:
+        try:
+            await bot.copy_message(
+                chat_id=chat_id,
+                from_chat_id=backup_ref.channel_id,
+                message_id=backup_ref.message_id,
+                caption=caption,
+                reply_markup=keyboard,
+            )
+            sent = True
+        except TypeError:
+            try:
+                await bot.forward_message(
+                    chat_id=chat_id,
+                    from_chat_id=backup_ref.channel_id,
+                    message_id=backup_ref.message_id,
+                )
+                await bot.send_message(chat_id=chat_id, text=caption, reply_markup=keyboard)
+                sent = True
+            except Exception as e:
+                logger.error(f"从备份转发失败: {e}")
+        except Exception as e:
+            logger.error(f"从备份复制失败: {e}")
+
+    if sent and from_user is not None:
+        await record_download(
+            user_id=from_user.id,
+            username=from_user.username,
+            first_name=from_user.first_name,
+            last_name=from_user.last_name,
+            book_id=book_id,
+            file_hash=book.file_hash,
+        )
+
 
 @book_detail_router.callback_query(F.data.startswith("book:"))
 async def on_book_callback(callback: CallbackQuery):
@@ -120,167 +273,24 @@ async def on_book_callback(callback: CallbackQuery):
 
 
 async def show_book_detail(callback: CallbackQuery, book_id: int):
-    """
-    显示书籍详情
-    """
-    await callback.answer("⏳ 加载中...")
-    try:
-        book = await asyncio.wait_for(get_book_from_db(book_id), timeout=3)
-    except Exception as e:
-        logger.warning(f"获取书籍详情失败: {e}")
-        await callback.answer("❌ 当前服务繁忙，请稍后重试", show_alert=True)
-        return
-
-    if not book:
-        await callback.answer("❌ 书籍信息获取失败")
-        return
-
-    file_refs = list(book.file.file_refs) if book.file else []
-    primary_ref = pick_primary_file_ref(file_refs)
-    backup_ref = pick_backup_ref(file_refs)
-
-    # 构建详情文本
-    tags = [bt.tag.name for bt in (book.book_tags or []) if bt.tag and bt.tag.name]
-    tags_display = " ".join([f"#{t}" for t in tags[:20]]) if tags else "暂无标签"
-    description = book.description or "暂无简介"
-    if len(description) > 300:
-        description = description[:300] + "..."
-
-    uploader_name = "未知"
-    if book.uploader:
-        uploader_name = book.uploader.username or f"{book.uploader.first_name}{book.uploader.last_name or ''}".strip() or "未知"
-
-    file_format = book.file.format.value if book.file and book.file.format else "未知"
-    file_size = format_size(book.file.size) if book.file else "未知"
-    word_count = book.file.word_count if book.file else 0
-
-    display_filename = f"{book.title}.{book.file.extension}" if book.file and book.file.extension else book.title
-
-    detail_text = (
-        f"📄 <b>{display_filename}</b>\n\n"
-        f"书名：<b>{book.title}</b>\n"
-        f"作者：{book.author}\n"
-        f"格式：{file_format.upper() if file_format != '未知' else '未知'}\n"
-        f"大小：{file_size}\n"
-        f"字数：{word_count}\n\n"
-        f"统计：{book.view_count}浏览｜{book.download_count}下载｜{book.favorite_count}收藏\n"
-        f"评分：{book.rating_score:.2f}({book.rating_count}人)｜质量：{book.quality_score:.2f}\n\n"
-        f"标签：{tags_display}\n\n"
-        f"简介：\n{description}\n\n"
-        f"创建：{format_date(book.created_at)}\n"
-        f"更新：{format_date(book.updated_at)}\n"
-        f"上传：{uploader_name}"
+    await send_book_card(
+        bot=callback.bot,
+        chat_id=callback.message.chat.id,
+        book_id=book_id,
+        from_user=callback.from_user,
     )
-
-    # 构建操作键盘
-    keyboard_rows: list[list[InlineKeyboardButton]] = []
-    can_download = bool(primary_ref or (backup_ref and backup_ref.channel_id and backup_ref.message_id))
-    if can_download:
-        keyboard_rows.append([
-            InlineKeyboardButton(
-                text="⬇️ 立即下载",
-                callback_data=f"book:download:{book_id}",
-            ),
-        ])
-    else:
-        detail_text += "\n\n⚠️ <b>文件暂不可用</b>\n请稍后重试或联系管理员"
-
-    keyboard_rows.append([
-        InlineKeyboardButton(
-            text="❤️ 收藏",
-            callback_data=f"book:fav:{book_id}",
-        ),
-        InlineKeyboardButton(
-            text="📝 评论",
-            callback_data=f"book:review:{book_id}",
-        ),
-    ])
-    keyboard_rows.append([
-        InlineKeyboardButton(
-            text="⚠️ 举报",
-            callback_data=f"book:report:{book_id}",
-        ),
-        InlineKeyboardButton(
-            text="🔗 分享",
-            callback_data=f"book:share:{book_id}",
-        ),
-    ])
-    keyboard_rows.append([
-        InlineKeyboardButton(text="❌ 关闭", callback_data="close"),
-        InlineKeyboardButton(text="◀️ 返回", callback_data="close"),
-    ])
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
-
-    try:
-        await callback.message.answer(detail_text, reply_markup=keyboard)
-    except TelegramBadRequest as e:
-        if "message is not modified" in str(e):
-            await callback.answer()
-        else:
-            raise
+    await callback.answer()
 
 
 async def handle_download(callback: CallbackQuery, book_id: int):
     """处理下载请求"""
-    await callback.answer("⏳ 正在准备文件...")
-    try:
-        book = await asyncio.wait_for(get_book_from_db(book_id), timeout=3)
-    except Exception as e:
-        logger.warning(f"获取下载信息失败: {e}")
-        await callback.answer("❌ 当前服务繁忙，请稍后重试", show_alert=True)
-        return
-    if not book or not book.file:
-        await callback.answer("❌ 文件信息不存在")
-        return
-
-    file_refs = list(book.file.file_refs) if book.file else []
-    primary_ref = pick_primary_file_ref(file_refs)
-    backup_ref = pick_backup_ref(file_refs)
-
-    if not primary_ref and not backup_ref:
-        await callback.answer("❌ 文件暂时不可用")
-        return
-
-    try:
-        if primary_ref:
-            await callback.bot.send_document(
-                chat_id=callback.message.chat.id,
-                document=primary_ref.tg_file_id,
-            )
-            await record_download(
-                user_id=callback.from_user.id,
-                username=callback.from_user.username,
-                first_name=callback.from_user.first_name,
-                last_name=callback.from_user.last_name,
-                book_id=book_id,
-                file_hash=book.file_hash,
-            )
-            await callback.answer("✅ 文件已发送")
-            return
-    except Exception as e:
-        logger.warning(f"直接发送文件失败: {e}")
-
-    if backup_ref and backup_ref.channel_id and backup_ref.message_id:
-        try:
-            await callback.bot.forward_message(
-                chat_id=callback.message.chat.id,
-                from_chat_id=backup_ref.channel_id,
-                message_id=backup_ref.message_id,
-            )
-            await record_download(
-                user_id=callback.from_user.id,
-                username=callback.from_user.username,
-                first_name=callback.from_user.first_name,
-                last_name=callback.from_user.last_name,
-                book_id=book_id,
-                file_hash=book.file_hash,
-            )
-            await callback.answer("✅ 文件已从备份恢复")
-            return
-        except Exception as e:
-            logger.error(f"从备份频道转发失败: {e}")
-
-    await callback.answer("❌ 文件下载失败")
+    await send_book_card(
+        bot=callback.bot,
+        chat_id=callback.message.chat.id,
+        book_id=book_id,
+        from_user=callback.from_user,
+    )
+    await callback.answer("✅ 已发送")
 
 
 async def handle_favorite(callback: CallbackQuery, book_id: int):
