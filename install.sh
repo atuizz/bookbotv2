@@ -6,6 +6,9 @@
 
 set -e
 
+# 确保 /usr/sbin 在 PATH 中 (Debian/Ubuntu 某些环境可能缺失)
+export PATH=$PATH:/usr/sbin:/sbin:/usr/local/sbin:/usr/local/bin
+
 # 颜色输出
 red='\033[0;31m'
 green='\033[0;32m'
@@ -134,10 +137,23 @@ apt-get install -y \
 
 # 验证关键依赖是否安装成功
 if ! command -v redis-server &> /dev/null; then
-        warn "Redis 似乎未正确安装，尝试修复..."
-        apt-get update
-        apt-get install -y redis-server
+    warn "Redis 似乎未正确安装，尝试强力修复..."
+    apt-get update
+    # 有些发行版可能使用 redis 包名
+    apt-get install -y redis-server || apt-get install -y redis || true
+    
+    # 再次检查
+    if ! command -v redis-server &> /dev/null; then
+        # 尝试查找二进制文件并链接
+        REDIS_BIN=$(find /usr -name redis-server -type f -executable 2>/dev/null | head -n 1)
+        if [[ -n "$REDIS_BIN" ]]; then
+            warn "找到 Redis 二进制文件: $REDIS_BIN，正在创建链接..."
+            ln -sf "$REDIS_BIN" /usr/bin/redis-server
+        else
+            error "Redis 安装彻底失败! 请尝试手动运行: apt-get update && apt-get install -y redis-server"
+        fi
     fi
+fi
 if ! command -v psql &> /dev/null; then
     error "PostgreSQL 安装失败! 请检查 apt 源"
 fi
