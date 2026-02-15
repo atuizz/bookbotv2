@@ -165,6 +165,7 @@ success "系统依赖安装完成"
 step "步骤 2.5: 安装和配置服务"
 
 # 1. 配置 Meilisearch
+MEILI_MASTER_KEY="masterKey_$(date +%s)_${RANDOM}"
 if ! command -v meilisearch &> /dev/null; then
     info "安装 Meilisearch..."
     curl -L https://install.meilisearch.com | sh
@@ -173,9 +174,21 @@ if ! command -v meilisearch &> /dev/null; then
     success "Meilisearch 安装完成"
 fi
 
+# 验证 Meilisearch 二进制文件是否可用
+if ! /usr/local/bin/meilisearch --version &> /dev/null; then
+    error "Meilisearch 二进制文件无法执行，可能是架构不匹配或缺少依赖库。\n请尝试手动下载适合您系统的版本: https://github.com/meilisearch/meilisearch/releases"
+else
+    MEILI_VERSION=$(/usr/local/bin/meilisearch --version | head -n 1)
+    success "Meilisearch 版本验证通过: $MEILI_VERSION"
+fi
+
 # 配置 Meilisearch Systemd
-if [[ $HAS_SYSTEMD -eq 1 && ! -f /etc/systemd/system/meilisearch.service ]]; then
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
     info "配置 Meilisearch 服务..."
+    # 确保数据目录存在
+    mkdir -p /var/lib/meilisearch/data
+    chmod 755 /var/lib/meilisearch/data
+
     cat > /etc/systemd/system/meilisearch.service << EOF
 [Unit]
 Description=Meilisearch
@@ -184,17 +197,19 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/meilisearch --master-key=masterKey --env=production --db-path=/var/lib/meilisearch/data
+Environment=MEILI_NO_ANALYTICS=true
+ExecStart=/usr/local/bin/meilisearch --master-key=${MEILI_MASTER_KEY} --env=production --db-path=/var/lib/meilisearch/data
 Restart=always
 RestartSec=10
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    mkdir -p /var/lib/meilisearch/data
+    
     systemctl daemon-reload
     systemctl enable meilisearch
-    info "Meilisearch 服务配置完成"
+    info "Meilisearch 服务配置完成 (Master Key 已更新为安全随机值)"
 fi
 
 # 始终尝试启动 Meilisearch (确保服务运行)
@@ -205,7 +220,7 @@ if [[ $HAS_SYSTEMD -eq 1 ]]; then
         info "等待 Meilisearch 启动..."
         for i in {1..30}; do
             if curl -s "http://localhost:7700/health" | grep -q "available"; then
-                success "Meilisearch 服务已就绪 (Master Key: masterKey)"
+                success "Meilisearch 服务已就绪 (Master Key: ${MEILI_MASTER_KEY})"
                 break
             fi
             if [ $i -eq 30 ]; then
@@ -226,9 +241,9 @@ if [[ $HAS_SYSTEMD -eq 1 ]]; then
         # 尝试使用 strace 跟踪系统调用 (如果已安装)
         if command -v strace &> /dev/null; then
              warn "使用 strace 跟踪启动过程..."
-             strace -f -o /tmp/meili_trace.log /usr/local/bin/meilisearch --master-key=masterKey --env=production --db-path=/var/lib/meilisearch/data &
+             strace -f -o /tmp/meili_trace.log /usr/local/bin/meilisearch --master-key=${MEILI_MASTER_KEY} --env=production --db-path=/var/lib/meilisearch/data &
         else
-             /usr/local/bin/meilisearch --master-key=masterKey --env=production --db-path=/var/lib/meilisearch/data &
+             /usr/local/bin/meilisearch --master-key=${MEILI_MASTER_KEY} --env=production --db-path=/var/lib/meilisearch/data &
         fi
         
         MEILI_PID=$!
@@ -242,6 +257,15 @@ if [[ $HAS_SYSTEMD -eq 1 ]]; then
     fi
 elif [[ $HAS_SYSTEMD -eq 0 ]]; then
     warn "检测到非 systemd 环境，跳过 Meilisearch 服务配置"
+    # 尝试直接启动
+    info "尝试直接启动 Meilisearch..."
+    nohup /usr/local/bin/meilisearch --master-key=${MEILI_MASTER_KEY} --env=production --db-path=/var/lib/meilisearch/data > /var/log/meilisearch.log 2>&1 &
+    sleep 5
+    if curl -s "http://localhost:7700/health" | grep -q "available"; then
+        success "Meilisearch 已在后台启动 (Master Key: ${MEILI_MASTER_KEY})"
+    else
+        error "Meilisearch 启动失败，请检查 /var/log/meilisearch.log"
+    fi
 fi
 
 # 1.5 配置 Redis
@@ -483,7 +507,7 @@ REDIS_DB=0
 
 # Meilisearch 配置
 MEILI_HOST=http://localhost:7700
-MEILI_API_KEY=masterKey
+MEILI_API_KEY=${MEILI_MASTER_KEY}
 MEILI_INDEX_NAME=books
 
 # 备份频道配置
@@ -545,7 +569,10 @@ else
         echo "DB_PORT=${DB_DEFAULT_PORT}" >> "$PROJECT_DIR/.env"
     fi
     if ! grep -q "^MEILI_API_KEY=" "$PROJECT_DIR/.env"; then
-        echo "MEILI_API_KEY=masterKey" >> "$PROJECT_DIR/.env"
+        echo "MEILI_API_KEY=${MEILI_MASTER_KEY}" >> "$PROJECT_DIR/.env"
+    else
+        # 更新已存在的 KEY
+        sed -i "s/^MEILI_API_KEY=.*/MEILI_API_KEY=${MEILI_MASTER_KEY}/" "$PROJECT_DIR/.env"
     fi
     if grep -q "^REDIS_PORT=" "$PROJECT_DIR/.env"; then
         sed -i "s/^REDIS_PORT=.*/REDIS_PORT=${REDIS_PORT_SELECTED}/" "$PROJECT_DIR/.env"
