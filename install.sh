@@ -114,26 +114,30 @@ info "更新软件包列表..."
 apt-get update -qq || warn "更新软件包列表失败"
 
 info "安装系统依赖..."
-# 移除 -qq 和 管道，确保能看到报错，并且 set -e 能捕获失败
-apt-get install -y \
-    software-properties-common \
-    build-essential \
-    libpq-dev \
-    python3-dev \
-    python3-venv \
-    python3-pip \
-    git \
-    curl \
-    wget \
-    sudo \
-    nano \
-    htop \
-    tree \
-    redis-tools \
-    postgresql-client \
-    redis-server \
-    postgresql \
-    postgresql-contrib
+if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" ]]; then
+        # 尝试安装 software-properties-common，如果失败尝试 python3-software-properties
+        apt-get install -y software-properties-common || apt-get install -y python3-software-properties || true
+    fi
+
+    # 移除 -qq 和 管道，确保能看到报错，并且 set -e 能捕获失败
+    apt-get install -y \
+        build-essential \
+        libpq-dev \
+        python3-dev \
+        python3-venv \
+        python3-pip \
+        git \
+        curl \
+        wget \
+        sudo \
+        nano \
+        htop \
+        tree \
+        redis-tools \
+        postgresql-client \
+        redis-server \
+        postgresql \
+        postgresql-contrib || true
 
 # 验证关键依赖是否安装成功
 if ! command -v redis-server &> /dev/null; then
@@ -166,14 +170,19 @@ if ! version_ge "$PYTHON_VERSION" "3.11"; then
     if [[ -n "$python_candidate" && "$python_candidate" != "(none)" ]]; then
         apt-get install -y -qq python3.11 python3.11-venv python3.11-dev || true
     else
-        if [[ "$OS_ID" == "ubuntu" ]]; then
-            if ! command -v add-apt-repository &> /dev/null; then
-        apt-get install -y software-properties-common
-    fi
-    add-apt-repository -y ppa:deadsnakes/ppa || true
-    apt-get update
-    apt-get install -y python3.11 python3.11-venv python3.11-dev || true
+    if [[ "$OS_ID" == "ubuntu" ]]; then
+        if ! command -v add-apt-repository &> /dev/null; then
+            apt-get install -y software-properties-common || true
         fi
+        add-apt-repository -y ppa:deadsnakes/ppa || true
+        apt-get update
+        apt-get install -y python3.11 python3.11-venv python3.11-dev || true
+    elif [[ "$OS_ID" == "debian" ]]; then
+         # Debian 不使用 PPA，尝试直接安装或编译安装
+         info "Debian 系统检测: 尝试直接安装 Python 3.11..."
+         apt-get update
+         apt-get install -y python3.11 python3.11-venv python3.11-dev || true
+    fi
     fi
     if command -v python3.11 &> /dev/null; then
         PYTHON_BIN="python3.11"
