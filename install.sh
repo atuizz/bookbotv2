@@ -114,30 +114,39 @@ info "更新软件包列表..."
 apt-get update -qq || warn "更新软件包列表失败"
 
 info "安装系统依赖..."
-if [[ "$OS_ID" == "debian" || "$OS_ID" == "ubuntu" ]]; then
-        # 尝试安装 software-properties-common，如果失败尝试 python3-software-properties
-        apt-get install -y software-properties-common || apt-get install -y python3-software-properties || true
+if [[ "$OS_ID" == "ubuntu" ]]; then
+        # 仅在 Ubuntu 上安装 PPA 管理工具，且允许失败
+        apt-get install -y software-properties-common || true
     fi
 
-    # 移除 -qq 和 管道，确保能看到报错，并且 set -e 能捕获失败
-    apt-get install -y \
-        build-essential \
-        libpq-dev \
-        python3-dev \
-        python3-venv \
-        python3-pip \
-        git \
-        curl \
-        wget \
-        sudo \
-        nano \
-        htop \
-        tree \
-        redis-tools \
-        postgresql-client \
-        redis-server \
-        postgresql \
-        postgresql-contrib || true
+    # 核心依赖 (Debian/Ubuntu 通用)
+    DEPS=(
+        build-essential
+        libpq-dev
+        python3-dev
+        python3-venv
+        python3-pip
+        git
+        curl
+        wget
+        sudo
+        nano
+        htop
+        tree
+        redis-tools
+        postgresql-client
+        redis-server
+        postgresql
+    )
+    
+    # 尝试安装 postgresql-contrib (如果存在)
+    apt-get install -y postgresql-contrib || true
+    
+    # 循环安装核心依赖，确保单个失败不影响整体 (尽可能)
+    info "正在逐个安装依赖..."
+    for dep in "${DEPS[@]}"; do
+        apt-get install -y "$dep" || warn "依赖 $dep 安装失败，尝试继续..."
+    done
 
 # 验证关键依赖是否安装成功
 if ! command -v redis-server &> /dev/null; then
@@ -154,7 +163,11 @@ if ! command -v redis-server &> /dev/null; then
             warn "找到 Redis 二进制文件: $REDIS_BIN，正在创建链接..."
             ln -sf "$REDIS_BIN" /usr/bin/redis-server
         else
-            error "Redis 安装彻底失败! 无法找到 redis-server 命令。\n请尝试手动运行: sudo apt-get update && sudo apt-get install -y redis-server"
+            warn "标准安装 redis-server 失败，尝试安装 redis..."
+            apt-get install -y redis || true
+            if ! command -v redis-server &> /dev/null; then
+                error "Redis 安装彻底失败! 无法找到 redis-server 命令。\n请尝试手动运行: sudo apt-get update && sudo apt-get install -y redis-server"
+            fi
         fi
     fi
 fi
