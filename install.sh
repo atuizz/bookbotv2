@@ -435,11 +435,12 @@ DEBUG=false
 ENVIRONMENT=production
 EOF
 
-    chmod 600 "$PROJECT_DIR/.env"
+    chmod 640 "$PROJECT_DIR/.env"
     success "环境配置文件创建完成"
     warn "请编辑 .env 文件并填写正确的配置值"
 else
     info "环境配置文件已存在，跳过创建"
+    sed -i 's/\r$//' "$PROJECT_DIR/.env"
     if ! grep -q "^BOT_TOKEN=" "$PROJECT_DIR/.env"; then
         echo -e "${yellow}"
         read -p "请输入您的 Telegram Bot Token: " USER_BOT_TOKEN
@@ -461,6 +462,18 @@ else
     if ! grep -q "^DB_PASSWORD=" "$PROJECT_DIR/.env"; then
         echo "DB_PASSWORD=${DB_DEFAULT_PASSWORD}" >> "$PROJECT_DIR/.env"
     fi
+    if ! grep -q "^DB_USER=" "$PROJECT_DIR/.env"; then
+        echo "DB_USER=${DB_DEFAULT_USER}" >> "$PROJECT_DIR/.env"
+    fi
+    if ! grep -q "^DB_NAME=" "$PROJECT_DIR/.env"; then
+        echo "DB_NAME=${DB_DEFAULT_NAME}" >> "$PROJECT_DIR/.env"
+    fi
+    if ! grep -q "^DB_HOST=" "$PROJECT_DIR/.env"; then
+        echo "DB_HOST=${DB_DEFAULT_HOST}" >> "$PROJECT_DIR/.env"
+    fi
+    if ! grep -q "^DB_PORT=" "$PROJECT_DIR/.env"; then
+        echo "DB_PORT=${DB_DEFAULT_PORT}" >> "$PROJECT_DIR/.env"
+    fi
     if ! grep -q "^MEILI_API_KEY=" "$PROJECT_DIR/.env"; then
         echo "MEILI_API_KEY=masterKey" >> "$PROJECT_DIR/.env"
     fi
@@ -473,6 +486,11 @@ else
         sed -i "s#^REDIS_URL=.*#REDIS_URL=redis://127.0.0.1:${REDIS_PORT_SELECTED}/0#" "$PROJECT_DIR/.env"
     else
         echo "REDIS_URL=redis://127.0.0.1:${REDIS_PORT_SELECTED}/0" >> "$PROJECT_DIR/.env"
+    fi
+    if grep -q "^DATABASE_URL=" "$PROJECT_DIR/.env"; then
+        sed -i "s#^DATABASE_URL=.*#DATABASE_URL=postgresql+asyncpg://$(env_get DB_USER):$(env_get DB_PASSWORD)@$(env_get DB_HOST):$(env_get DB_PORT)/$(env_get DB_NAME)#" "$PROJECT_DIR/.env"
+    else
+        echo "DATABASE_URL=postgresql+asyncpg://$(env_get DB_USER):$(env_get DB_PASSWORD)@$(env_get DB_HOST):$(env_get DB_PORT)/$(env_get DB_NAME)" >> "$PROJECT_DIR/.env"
     fi
 fi
 
@@ -492,9 +510,11 @@ if [[ $HAS_SYSTEMD -eq 1 ]] && systemctl is-active --quiet postgresql; then
     sleep 2
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER_EFFECTIVE}'" | grep -q 1; then
         info "创建数据库用户 ${DB_USER_EFFECTIVE}..."
-        sudo -u postgres psql -c "CREATE USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_EFFECTIVE}';"
+        DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
+        sudo -u postgres psql -c "CREATE USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';"
     fi
-    sudo -u postgres psql -c "ALTER USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_EFFECTIVE}';" || true
+    DB_PASSWORD_SQL=${DB_PASSWORD_EFFECTIVE//\'/\'\'}
+    sudo -u postgres psql -c "ALTER USER ${DB_USER_EFFECTIVE} WITH PASSWORD '${DB_PASSWORD_SQL}';" || true
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME_EFFECTIVE}'" | grep -q 1; then
         info "创建数据库 ${DB_NAME_EFFECTIVE}..."
         sudo -u postgres psql -c "CREATE DATABASE ${DB_NAME_EFFECTIVE} OWNER ${DB_USER_EFFECTIVE};"
