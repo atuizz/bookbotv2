@@ -111,7 +111,8 @@ info "更新软件包列表..."
 apt-get update -qq || warn "更新软件包列表失败"
 
 info "安装系统依赖..."
-apt-get install -y -qq \
+# 移除 -qq 和 管道，确保能看到报错，并且 set -e 能捕获失败
+apt-get install -y \
     software-properties-common \
     build-essential \
     libpq-dev \
@@ -129,11 +130,17 @@ apt-get install -y -qq \
     postgresql-client \
     redis-server \
     postgresql \
-    postgresql-contrib \
-    2>&1 | while read -r line; do
-        # 静默安装
-        :
-    done
+    postgresql-contrib
+
+# 验证关键依赖是否安装成功
+if ! command -v redis-server &> /dev/null; then
+        warn "Redis 似乎未正确安装，尝试修复..."
+        apt-get update
+        apt-get install -y redis-server
+    fi
+if ! command -v psql &> /dev/null; then
+    error "PostgreSQL 安装失败! 请检查 apt 源"
+fi
 
 # 安装 Python 3.11 (如果系统没有)
 if ! version_ge "$PYTHON_VERSION" "3.11"; then
@@ -144,11 +151,11 @@ if ! version_ge "$PYTHON_VERSION" "3.11"; then
     else
         if [[ "$OS_ID" == "ubuntu" ]]; then
             if ! command -v add-apt-repository &> /dev/null; then
-                apt-get install -y -qq software-properties-common
-            fi
-            add-apt-repository -y ppa:deadsnakes/ppa 2>&1 > /dev/null || true
-            apt-get update -qq
-            apt-get install -y -qq python3.11 python3.11-venv python3.11-dev || true
+        apt-get install -y software-properties-common
+    fi
+    add-apt-repository -y ppa:deadsnakes/ppa || true
+    apt-get update
+    apt-get install -y python3.11 python3.11-venv python3.11-dev || true
         fi
     fi
     if command -v python3.11 &> /dev/null; then
