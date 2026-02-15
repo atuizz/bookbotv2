@@ -105,6 +105,9 @@ async def main() -> None:
 
     logger.info("Bot 初始化完成，开始轮询...")
 
+    # 清除 Webhook 以确保 Polling 模式可用
+    await bot.delete_webhook(drop_pending_updates=True)
+
     # 开始轮询
     try:
         await dp.start_polling(
