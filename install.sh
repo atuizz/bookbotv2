@@ -150,10 +150,11 @@ if ! command -v redis-server &> /dev/null; then
             warn "找到 Redis 二进制文件: $REDIS_BIN，正在创建链接..."
             ln -sf "$REDIS_BIN" /usr/bin/redis-server
         else
-            error "Redis 安装彻底失败! 请尝试手动运行: apt-get update && apt-get install -y redis-server"
+            error "Redis 安装彻底失败! 无法找到 redis-server 命令。\n请尝试手动运行: sudo apt-get update && sudo apt-get install -y redis-server"
         fi
     fi
 fi
+REDIS_BIN_PATH=$(command -v redis-server)
 if ! command -v psql &> /dev/null; then
     error "PostgreSQL 安装失败! 请检查 apt 源"
 fi
@@ -303,7 +304,7 @@ else
             success "Redis 服务启动成功"
         else
             warn "Redis 服务启动失败，尝试直接启动 Redis 进程..."
-            redis-server /etc/redis/redis.conf --daemonize yes || true
+            "$REDIS_BIN_PATH" /etc/redis/redis.conf --daemonize yes || true
             sleep 1
             if redis-cli -h 127.0.0.1 -p ${REDIS_PORT_SELECTED} ping >/dev/null 2>&1; then
                 warn "Redis 已通过直接进程启动，但 systemd 服务未就绪"
@@ -317,7 +318,7 @@ else
         fi
     else
         warn "检测到非 systemd 环境，尝试直接启动 Redis 进程"
-        redis-server /etc/redis/redis.conf --daemonize yes || true
+        "$REDIS_BIN_PATH" /etc/redis/redis.conf --daemonize yes || true
         sleep 1
         if redis-cli -h 127.0.0.1 -p ${REDIS_PORT_SELECTED} ping >/dev/null 2>&1; then
             success "Redis 服务启动成功"
