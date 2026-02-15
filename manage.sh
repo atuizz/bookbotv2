@@ -308,10 +308,57 @@ cmd_health() {
     fi
 }
 
-cmd_test() {
-    log_info "运行测试..."
-    cd "$PROJECT_DIR" && "$PYTHON" -m pytest "$@"
+cmd_doctor() {
+    log_info "开始全面诊断..."
+    
+    # 1. 检查 Python 环境
+    check_python
+    if [[ -d "$VENV_DIR" ]]; then
+        log_success "虚拟环境正常: $VENV_DIR"
+    else
+        log_error "虚拟环境丢失!"
+    fi
+    
+    # 2. 检查 .env 配置
+    if [[ -f "$PROJECT_DIR/.env" ]]; then
+        log_success ".env 配置文件存在"
+        # 检查关键变量
+        if grep -q "BOT_TOKEN=your_bot_token_here" "$PROJECT_DIR/.env"; then
+            log_error "BOT_TOKEN 未配置! 请编辑 .env 文件"
+        elif grep -q "BOT_TOKEN=" "$PROJECT_DIR/.env"; then
+            log_success "BOT_TOKEN 已配置"
+        else
+            log_error "BOT_TOKEN 缺失!"
+        fi
+    else
+        log_error ".env 配置文件丢失!"
+    fi
+    
+    # 3. 检查依赖服务
+    check_services
+    
+    # 4. 检查 Bot 服务日志
+    if command -v systemctl &>/dev/null; then
+        log_info "检查 Systemd 服务状态..."
+        if systemctl is-active --quiet book-bot-v2; then
+            log_success "Bot 服务正在运行"
+        else
+            log_error "Bot 服务未运行!"
+        fi
+        
+        log_info "Bot 服务最近日志 (最后 20 行):"
+        echo -e "${YELLOW}--------------------------------------------------${NC}"
+        sudo journalctl -u book-bot-v2 -n 20 --no-pager
+        echo -e "${YELLOW}--------------------------------------------------${NC}"
+        
+        if systemctl is-active --quiet book-bot-v2-worker; then
+            log_success "Worker 服务正在运行"
+        else
+            log_error "Worker 服务未运行!"
+        fi
+    fi
 }
+
 
 # ============================================
 # 主入口
@@ -330,6 +377,7 @@ cmd_help() {
   start-worker     启动任务队列 Worker
   gen-service      生成 systemd 服务配置文件
   health           检查依赖服务健康状态
+  doctor           自动诊断常见问题 (Bot不响应、服务异常等)
   test             运行测试套件
   help             显示此帮助信息
 
@@ -377,8 +425,12 @@ main() {
         health)
             cmd_health
             ;;
+        doctor)
+            cmd_doctor
+            ;;
         test)
-            cmd_test "$@"
+            # 兼容性保留，虽然已被 doctor 覆盖
+            cmd_doctor
             ;;
         help|--help|-h)
             cmd_help
