@@ -28,6 +28,7 @@ SYSTEMD_DIR="/etc/systemd/system"
 # 检查 .env 文件
 if [[ -f "$PROJECT_DIR/.env" ]]; then
     sed -i 's/\r$//' "$PROJECT_DIR/.env"
+    sed -i 's/[[:space:]]*$//' "$PROJECT_DIR/.env"
     set -a
     source "$PROJECT_DIR/.env"
     set +a
@@ -110,6 +111,31 @@ check_services() {
     return 0
 }
 
+check_db_connection() {
+    local host=${DB_HOST:-127.0.0.1}
+    local port=${DB_PORT:-5432}
+    local user=${DB_USER:-bookbot}
+    local name=${DB_NAME:-bookbot_v2}
+    local pass=${DB_PASSWORD:-}
+    if [[ -z "$pass" ]]; then
+        log_error "DB_PASSWORD 未设置"
+        return 1
+    fi
+    if PGPASSWORD="$pass" psql -h "$host" -p "$port" -U "$user" -d "$name" -c "select 1" >/dev/null 2>&1; then
+        return 0
+    fi
+    if [[ $EUID -ne 0 ]]; then
+        log_error "数据库密码验证失败，请使用 sudo ./manage.sh migrate 或重新运行 install.sh"
+        return 1
+    fi
+    local pass_sql=${pass//\'/\'\'}
+    sudo -u postgres psql -c "ALTER USER ${user} WITH PASSWORD '${pass_sql}';" >/dev/null 2>&1 || true
+    if PGPASSWORD="$pass" psql -h "$host" -p "$port" -U "$user" -d "$name" -c "select 1" >/dev/null 2>&1; then
+        return 0
+    fi
+    log_error "数据库密码验证失败，请检查 .env 中的 DB_PASSWORD 与 DATABASE_URL"
+    return 1
+}
 # ============================================
 # 命令实现
 # ============================================
@@ -159,6 +185,7 @@ cmd_migrate() {
     fi
 
     check_services || exit 1
+    check_db_connection || exit 1
 
     # 初始化 Alembic（如果不存在）
     if [[ ! -d "$PROJECT_DIR/alembic" ]]; then

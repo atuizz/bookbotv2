@@ -43,6 +43,7 @@ env_get() {
         local value
         value=$(grep -E "^${key}=" "$PROJECT_DIR/.env" | tail -n 1 | cut -d= -f2-)
         value=${value//$'\r'/}
+        value=$(echo "$value" | sed -e 's/[[:space:]]*$//')
         if [[ "${value:0:1}" == "\"" && "${value: -1}" == "\"" ]]; then
             value="${value:1:-1}"
         elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
@@ -452,6 +453,7 @@ EOF
 else
     info "环境配置文件已存在，跳过创建"
     sed -i 's/\r$//' "$PROJECT_DIR/.env"
+    sed -i 's/[[:space:]]*$//' "$PROJECT_DIR/.env"
     if [[ -n "$SUDO_USER" ]]; then
         chown "$SUDO_USER":"$SUDO_USER" "$PROJECT_DIR/.env"
         chmod 640 "$PROJECT_DIR/.env"
