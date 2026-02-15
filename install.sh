@@ -194,7 +194,11 @@ EOF
     mkdir -p /var/lib/meilisearch/data
     systemctl daemon-reload
     systemctl enable meilisearch
+    info "Meilisearch 服务配置完成"
+fi
 
+# 始终尝试启动 Meilisearch (确保服务运行)
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
     info "启动 Meilisearch..."
     if systemctl restart meilisearch; then
         # 等待 Meilisearch 启动
@@ -382,7 +386,10 @@ else
         fi
         
         cd "$PROJECT_DIR"
-        # 强制更新到最新代码，覆盖本地 manage.sh (如果被修改过)
+        # 强制更新到最新代码
+        info "正在更新代码..."
+        git fetch --all
+        git reset --hard origin/master
     else
         info "正在克隆 Git 仓库..."
         # 尝试清理目标目录（如果存在但不是git仓库）
