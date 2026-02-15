@@ -194,8 +194,48 @@ EOF
     mkdir -p /var/lib/meilisearch/data
     systemctl daemon-reload
     systemctl enable meilisearch
-    systemctl start meilisearch
-    success "Meilisearch 服务已启动 (Master Key: masterKey)"
+
+    info "启动 Meilisearch..."
+    if systemctl restart meilisearch; then
+        # 等待 Meilisearch 启动
+        info "等待 Meilisearch 启动..."
+        for i in {1..30}; do
+            if curl -s "http://localhost:7700/health" | grep -q "available"; then
+                success "Meilisearch 服务已就绪 (Master Key: masterKey)"
+                break
+            fi
+            if [ $i -eq 30 ]; then
+                warn "Meilisearch 启动超时，正在检查日志..."
+                echo -e "${red}=== Meilisearch Systemd 日志 ===${reset}"
+                journalctl -u meilisearch.service -n 50 --no-pager
+                echo -e "${red}================================${reset}"
+            fi
+            sleep 1
+        done
+    else
+        warn "Meilisearch 服务启动失败，正在尝试诊断..."
+        echo -e "${red}=== Meilisearch Systemd 日志 ===${reset}"
+        journalctl -u meilisearch.service -n 50 --no-pager
+        echo -e "${red}================================${reset}"
+        
+        info "尝试前台直接运行以捕获错误..."
+        # 尝试使用 strace 跟踪系统调用 (如果已安装)
+        if command -v strace &> /dev/null; then
+             warn "使用 strace 跟踪启动过程..."
+             strace -f -o /tmp/meili_trace.log /usr/local/bin/meilisearch --master-key=masterKey --env=production --db-path=/var/lib/meilisearch/data &
+        else
+             /usr/local/bin/meilisearch --master-key=masterKey --env=production --db-path=/var/lib/meilisearch/data &
+        fi
+        
+        MEILI_PID=$!
+        sleep 5
+        if ps -p $MEILI_PID > /dev/null; then
+            success "Meilisearch 前台运行成功，可能是 Systemd 配置问题"
+            kill $MEILI_PID
+        else
+            error "Meilisearch 无法运行，请检查上方输出错误信息"
+        fi
+    fi
 elif [[ $HAS_SYSTEMD -eq 0 ]]; then
     warn "检测到非 systemd 环境，跳过 Meilisearch 服务配置"
 fi
