@@ -27,13 +27,13 @@ class TestFormatHelpers:
 
     def test_format_size_kb(self):
         """测试KB格式化"""
-        assert format_size(1024) == "1.0KB"
+        assert format_size(1024) == "1KB"
         assert format_size(1536) == "1.5KB"
-        assert format_size(1024 * 512) == "512.0KB"
+        assert format_size(1024 * 512) == "512KB"
 
     def test_format_size_mb(self):
         """测试MB格式化"""
-        assert format_size(1024 * 1024) == "1.0MB"
+        assert format_size(1024 * 1024) == "1MB"
         assert format_size(1024 * 1024 * 5.5) == "5.5MB"
 
     def test_format_word_count_small(self):
@@ -109,7 +109,7 @@ class TestBuildSearchResultText:
         assert "1. 测试书名" in text
         assert "📄" in text  # TXT格式Emoji
         assert "TXT" in text  # 格式大写
-        assert "500.0KB" in text  # 大小
+        assert "500KB" in text  # 大小
 
     def test_result_with_18plus_flag(self, mock_response):
         """测试成人内容标记"""

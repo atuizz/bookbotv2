@@ -37,9 +37,11 @@ def format_size(size_bytes: int) -> str:
     if size_bytes < 1024:
         return f"{size_bytes}B"
     elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f}KB"
+        kb = round(size_bytes / 1024, 1)
+        return f"{int(kb)}KB" if float(kb).is_integer() else f"{kb:.1f}KB"
     elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f}MB"
+        mb = round(size_bytes / (1024 * 1024), 1)
+        return f"{int(mb)}MB" if float(mb).is_integer() else f"{mb:.1f}MB"
     else:
         return f"{size_bytes / (1024 * 1024 * 1024):.1f}GB"
 
@@ -125,7 +127,7 @@ def build_book_caption(book: Book) -> str:
         f"书名：{book.title}",
         f"文件：{display_filename}",
         f"作者：{book.author or 'Unknown'}",
-        f"文库：{fmt_display}· {file_size} · {format_word_count(word_count)}字",
+        f"文库：{fmt_display}·{file_size}·{format_word_count(word_count)}字·{book.rating_count}R",
         "",
         f"统计：{book.view_count}热度｜{book.download_count}下载｜{book.like_count}点赞｜{book.favorite_count}收藏",
         f"评分：{book.rating_score:.2f}分({book.rating_count}人)",
@@ -133,7 +135,7 @@ def build_book_caption(book: Book) -> str:
         "",
         f"标签：{tags_display}",
         "",
-        description,
+        f"<blockquote>{description}</blockquote>",
         "",
         f"创建：{format_date(book.created_at)}",
         f"更新：{format_date(book.updated_at)}",

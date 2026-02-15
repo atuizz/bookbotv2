@@ -87,6 +87,11 @@ async def cmd_start(message: Message):
     asyncio.create_task(ensure_user_with_timeout())
 
 
+@common_router.message(Command("cancel"))
+async def cmd_cancel(message: Message):
+    await message.answer("❌ 操作已取消")
+
+
 @common_router.message(Command("help"))
 async def cmd_help(message: Message):
     """处理 /help 命令"""

@@ -23,11 +23,12 @@ settings_router = Router(name="settings")
 class UserSettings:
     """用户设置数据类"""
     content_rating: str = "all"  # all, general, mature, adult
-    search_button_mode: str = "minimal"  # minimal, classic
+    search_button_mode: str = "preview"  # preview, download
     hide_personal_info: bool = False
     hide_upload_list: bool = False
     close_upload_feedback: bool = False
     close_invite_feedback: bool = False
+    close_download_feedback: bool = False
     close_book_update_notice: bool = False
 
 
@@ -57,6 +58,7 @@ def render_settings_text(settings: UserSettings) -> str:
         "",
         f"关闭上传反馈消息:{yn(settings.close_upload_feedback)}",
         f"关闭邀请反馈消息:{yn(settings.close_invite_feedback)}",
+        f"关闭下载反馈消息:{yn(settings.close_download_feedback)}",
         f"关闭书籍动态消息:{yn(settings.close_book_update_notice)}",
     ]
     return "\n".join(lines)
@@ -79,6 +81,9 @@ def build_settings_keyboard() -> InlineKeyboardMarkup:
         [
             InlineKeyboardButton(text="关闭上传反馈消息", callback_data="settings:toggle:close_upload"),
             InlineKeyboardButton(text="关闭邀请反馈消息", callback_data="settings:toggle:close_invite"),
+        ],
+        [
+            InlineKeyboardButton(text="关闭下载反馈消息", callback_data="settings:toggle:close_download"),
         ],
         [
             InlineKeyboardButton(text="关闭书籍动态消息", callback_data="settings:toggle:close_book_update"),
@@ -113,10 +118,10 @@ def get_content_rating_name(rating: str) -> str:
 def get_search_mode_name(mode: str) -> str:
     """获取搜索模式名称"""
     names = {
-        "minimal": "极简模式",
-        "classic": "传统模式",
+        "preview": "预览模式",
+        "download": "下载模式",
     }
-    return names.get(mode, "极简模式")
+    return names.get(mode, "预览模式")
 
 
 # 回调处理器
@@ -153,7 +158,7 @@ async def on_settings_callback(callback: CallbackQuery):
         return
 
     if action == "search_mode":
-        settings.search_button_mode = "classic" if settings.search_button_mode == "minimal" else "minimal"
+        settings.search_button_mode = "download" if settings.search_button_mode == "preview" else "preview"
         save_user_settings(user_id, settings)
         await callback.message.edit_text(render_settings_text(settings), reply_markup=build_settings_keyboard())
         await callback.answer()
@@ -169,6 +174,8 @@ async def on_settings_callback(callback: CallbackQuery):
             settings.close_upload_feedback = not settings.close_upload_feedback
         elif key == "close_invite":
             settings.close_invite_feedback = not settings.close_invite_feedback
+        elif key == "close_download":
+            settings.close_download_feedback = not settings.close_download_feedback
         elif key == "close_book_update":
             settings.close_book_update_notice = not settings.close_book_update_notice
         save_user_settings(user_id, settings)
@@ -186,39 +193,3 @@ async def on_settings_callback(callback: CallbackQuery):
         return
 
     await callback.answer("⚠️ 未知操作", show_alert=True)
-    await callback.answer("✅ 设置已保存")
-
-
-# 注册回到设置主面板的回调
-@settings_router.callback_query(F.data == "settings:back")
-async def on_settings_back(callback: CallbackQuery):
-    """返回设置主面板"""
-    # 重新调用 /settings 命令的处理逻辑
-    from app.handlers.settings import cmd_settings
-
-    # 模拟一个消息对象来调用主函数
-    # 或者直接重新显示主面板
-    await callback.message.edit_text(
-        "⚙️ <b>全局设置面板</b>\n\n"
-        "⚠️ 设置功能正在开发中...\n\n"
-        "可用设置:\n"
-        "• 🔞 内容分级\n"
-        "• 🔍 搜索设置\n"
-        "• 🔔 消息通知\n"
-        "• 🎨 界面设置\n\n"
-        "💡 点击下方按钮快速修改设置",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="🔞 内容分级", callback_data="settings:content_rating"),
-                InlineKeyboardButton(text="🔍 搜索设置", callback_data="settings:search"),
-            ],
-            [
-                InlineKeyboardButton(text="🔔 消息通知", callback_data="settings:notifications"),
-                InlineKeyboardButton(text="🎨 界面设置", callback_data="settings:ui"),
-            ],
-            [
-                InlineKeyboardButton(text="💾 保存并关闭", callback_data="settings:save"),
-            ],
-        ])
-    )
-    await callback.answer()

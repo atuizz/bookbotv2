@@ -99,9 +99,11 @@ def format_size(size_bytes: int) -> str:
     if size_bytes < 1024:
         return f"{size_bytes}B"
     elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f}KB"
+        kb = round(size_bytes / 1024, 1)
+        return f"{int(kb)}KB" if float(kb).is_integer() else f"{kb:.1f}KB"
     else:
-        return f"{size_bytes / (1024 * 1024):.1f}MB"
+        mb = round(size_bytes / (1024 * 1024), 1)
+        return f"{int(mb)}MB" if float(mb).is_integer() else f"{mb:.1f}MB"
 
 
 def format_word_count(count: int) -> str:
@@ -155,27 +157,9 @@ def build_search_result_text(
     start_idx = (page - 1) * per_page + 1
     end_idx = min(start_idx + len(hits) - 1, total)
 
-    # 头部
     lines = [
-        f"🔍 搜索作品:<b>{query}</b> Results {start_idx}-{end_idx} of {total} (用时 {processing_time:.2f} 秒)"
+        f"🔍 搜索作品/作者:<b>{query}</b> Results {start_idx}-{end_idx} of {total} (用时 {processing_time:.2f} 秒)"
     ]
-
-    # 当前筛选条件显示
-    if user_filters:
-        filter_texts = []
-        if user_filters.get("format"):
-            filter_texts.append(f"格式:{user_filters['format']}")
-        if user_filters.get("is_18plus") is not None:
-            filter_texts.append("成人内容" if user_filters["is_18plus"] else "全年龄")
-        if user_filters.get("sort"):
-            sort_map = {
-                "popular": "热度",
-                "newest": "最新",
-                "largest": "最大",
-            }
-            filter_texts.append(f"排序:{sort_map.get(user_filters['sort'], user_filters['sort'])}")
-        if filter_texts:
-            lines.append(f"<i>[筛选: {' | '.join(filter_texts)}]</i>")
 
     # 结果列表
     bot_username = (bot_username or "").lstrip("@")
@@ -198,7 +182,7 @@ def build_search_result_text(
         size_str = format_size(book.size)
         word_str = format_word_count(book.word_count)
         rating_display = f"{book.rating_score:.2f}/{book.quality_score:.2f}"
-        detail_line = f"{emoji}· {book.format.upper()} · {size_str} · {word_str}字 · {rating_display}"
+        detail_line = f"{emoji}·{book.format.upper()}·{size_str}·{word_str}字·{rating_display}"
         lines.append(detail_line)
 
     lines.append("")
