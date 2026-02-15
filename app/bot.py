@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.strategy import FSMStrategy
 
@@ -85,7 +86,7 @@ async def main() -> None:
     # 初始化 Bot
     bot = Bot(
         token=settings.bot_token,
-        parse_mode=ParseMode.HTML,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
 
     # 初始化 Dispatcher
