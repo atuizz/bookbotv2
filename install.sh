@@ -727,8 +727,9 @@ fi
 
 if [[ $HAS_SYSTEMD -eq 1 ]]; then
     info "启动服务..."
-    systemctl start book-bot-v2
-    systemctl start book-bot-v2-worker
+    # 使用 restart 确保代码更新后服务重启
+    systemctl restart book-bot-v2
+    systemctl restart book-bot-v2-worker
 else
     warn "检测到非 systemd 环境，跳过服务启动"
 fi

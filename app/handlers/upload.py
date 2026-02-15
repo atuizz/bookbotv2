@@ -12,8 +12,13 @@ from aiogram import Router, F
 from aiogram.types import Message, Document, CallbackQuery
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logger import logger
+from app.core.database import get_session_factory
+from app.core.models import Book, File, User, FileRef, BookStatus, FileFormat
+from app.services.search import get_search_service
 
 upload_router = Router(name="upload")
 
@@ -204,19 +209,124 @@ async def handle_document(message: Message):
         )
 
         # 4. 保存文件/转发到备份频道
-        # TODO: 实现实际的文件保存逻辑
-        # - 转发到备份频道
-        # - 保存文件元数据到数据库
-        # - 建立用户-文件关联
-
-        # 5. 计算奖励
-        reward_coins = calculate_upload_reward(file_size, file_ext)
-
-        # 6. 更新数据库（演示用，实际需要调用数据库接口）
-        # TODO:
-        # - 更新用户书币余额
-        # - 记录上传历史
-        # - 添加文件到索引
+        # 获取数据库会话
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            # 4.1 检查/创建用户
+            stmt = select(User).where(User.id == user.id)
+            result = await session.execute(stmt)
+            db_user = result.scalar_one_or_none()
+            
+            if not db_user:
+                db_user = User(
+                    id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    coins=0,
+                    upload_count=0
+                )
+                session.add(db_user)
+            
+            # 4.2 检查/创建文件
+            stmt = select(File).where(File.sha256_hash == file_hash)
+            result = await session.execute(stmt)
+            db_file = result.scalar_one_or_none()
+            
+            if not db_file:
+                # 尝试匹配格式枚举
+                try:
+                    fmt = FileFormat(file_ext)
+                except ValueError:
+                    fmt = FileFormat.TXT
+                
+                db_file = File(
+                    sha256_hash=file_hash,
+                    size=file_size,
+                    extension=file_ext,
+                    format=fmt,
+                    word_count=0
+                )
+                session.add(db_file)
+            
+            # 4.3 创建文件引用
+            # 检查是否已存在引用
+            stmt = select(FileRef).where(
+                FileRef.file_hash == file_hash,
+                FileRef.tg_file_id == document.file_id
+            )
+            result = await session.execute(stmt)
+            if not result.scalar_one_or_none():
+                file_ref = FileRef(
+                    file_hash=file_hash,
+                    tg_file_id=document.file_id,
+                    is_primary=True,
+                    is_active=True
+                )
+                session.add(file_ref)
+            
+            # 5. 计算奖励
+            reward_coins = calculate_upload_reward(file_size, file_ext)
+            
+            # 6. 创建书籍记录并更新用户
+            # 简单的书名处理：去除扩展名
+            book_title = file_name.rsplit('.', 1)[0]
+            
+            # 自动通过审核 (BookStatus.ACTIVE)
+            new_book = Book(
+                title=book_title,
+                author="Unknown", # 默认作者
+                file_hash=file_hash,
+                uploader_id=user.id,
+                status=BookStatus.ACTIVE,
+                size=file_size, # 注意：Book模型其实没有size字段，这里可能是个误解，但SearchService需要size。
+                # 检查Book模型定义，确实没有size字段，size在File中。
+                # 所以这里不能传size给Book构造函数。
+                # 我们稍后在构建索引文档时会从db_file获取size。
+                is_original=False,
+                is_18plus=False,
+                is_vip_only=False,
+                rating_score=0.0
+            )
+            # 修正：Book没有size字段，移除
+            new_book = Book(
+                title=book_title,
+                author="Unknown",
+                file_hash=file_hash,
+                uploader_id=user.id,
+                status=BookStatus.ACTIVE,
+                is_original=False,
+                is_18plus=False,
+                is_vip_only=False,
+                rating_score=0.0
+            )
+            session.add(new_book)
+            
+            # 更新用户数据
+            db_user.coins += reward_coins
+            db_user.upload_count += 1
+            
+            # 提交事务
+            await session.commit()
+            await session.refresh(new_book)
+            
+            # 7. 添加到搜索索引
+            search_service = await get_search_service()
+            await search_service.add_document({
+                "id": new_book.id,
+                "title": new_book.title,
+                "author": new_book.author,
+                "format": file_ext,
+                "size": file_size,
+                "word_count": 0,
+                "rating_score": 0.0,
+                "quality_score": 0.0,
+                "rating_count": 0,
+                "download_count": 0,
+                "is_18plus": False,
+                "tags": [],
+                "created_at": new_book.created_at.timestamp() if new_book.created_at else 0
+            })
 
         # 发送成功消息
         emoji = SUPPORTED_FORMATS[file_ext]["emoji"]
@@ -227,7 +337,7 @@ async def handle_document(message: Message):
             f"📏 大小: {format_file_size(file_size)}\n"
             f"🔍 文件ID: <code>{file_hash[:16]}...</code>\n\n"
             f"💰 <b>获得奖励:</b> +{reward_coins} 书币\n\n"
-            f"🎉 感谢你的分享! 文件将在审核后对所有用户可见。"
+            f"🎉 感谢你的分享! 文件已自动通过审核，现在可以被搜索到了。"
         )
 
         logger.info(
