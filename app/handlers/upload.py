@@ -150,11 +150,11 @@ async def handle_document(message: Message):
     # 2. 校验文件大小
     file_size = document.file_size or 0
 
-    if file_size < 1024:
+    if file_size < 1:
         await message.reply(
             f"❌ <b>文件太小</b>\n\n"
             f"文件大小: {format_file_size(file_size)}\n"
-            f"最小要求: 1KB\n\n"
+            f"最小要求: 1 字节\n\n"
             f"请检查文件是否完整。"
         )
         return
