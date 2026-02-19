@@ -26,9 +26,11 @@ from aiogram.exceptions import TelegramBadRequest
 
 from app.core.logger import logger
 from app.core.database import get_session_factory
+from app.core.text import escape_html
 from app.core.models import Book, File, FileRef, BookTag, Tag, User, Favorite, DownloadLog
-from sqlalchemy import select
+from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
+from sqlalchemy.exc import IntegrityError
 
 book_detail_router = Router(name="book_detail")
 
@@ -86,6 +88,37 @@ def pick_backup_ref(file_refs: list[FileRef]) -> Optional[FileRef]:
     return None
 
 
+def build_user_book_keyboard(*, book_id: int, is_fav: bool) -> InlineKeyboardMarkup:
+    fav_text = "💚收藏" if is_fav else "🤍收藏"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text=fav_text, callback_data=f"book:fav:{book_id}"),
+                InlineKeyboardButton(text="+书单", callback_data=f"book:booklist:{book_id}"),
+                InlineKeyboardButton(text="💬评价", callback_data=f"book:review:{book_id}"),
+            ],
+            [
+                InlineKeyboardButton(text="+加标签", callback_data=f"book:tagadd:{book_id}"),
+                InlineKeyboardButton(text="💡我相似", callback_data=f"book:similar:{book_id}"),
+                InlineKeyboardButton(text="...更多", callback_data=f"book:more:{book_id}"),
+            ],
+        ]
+    )
+
+
+def build_booklist_keyboard(*, book_id: int, count: int, selected: bool) -> InlineKeyboardMarkup:
+    item_text = f"{'✅' if selected else ''}[{count}本] 我喜欢的书籍"
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="++新建", callback_data=f"book:booklist_new:{book_id}"),
+                InlineKeyboardButton(text="<返回", callback_data=f"book:booklist_back:{book_id}"),
+            ],
+            [InlineKeyboardButton(text=item_text, callback_data=f"book:booklist_sel:{book_id}")],
+        ]
+    )
+
+
 async def get_book_from_db(book_id: int) -> Optional[Book]:
     session_factory = get_session_factory()
     async with session_factory() as session:
@@ -103,7 +136,7 @@ async def get_book_from_db(book_id: int) -> Optional[Book]:
 
 def build_book_caption(book: Book) -> str:
     tags = [bt.tag.name for bt in (book.book_tags or []) if bt.tag and bt.tag.name]
-    tags_display = " ".join([f"#{t}" for t in tags[:30]]) if tags else "暂无标签"
+    tags_display = " ".join([f"#{escape_html(t)}" for t in tags[:30]]) if tags else "暂无标签"
 
     description = (book.description or "暂无简介").strip()
     if len(description) > 350:
@@ -116,30 +149,44 @@ def build_book_caption(book: Book) -> str:
             or f"{book.uploader.first_name}{book.uploader.last_name or ''}".strip()
             or "未知"
         )
+    uploader_name = escape_html(uploader_name)
 
     file_format = book.file.format.value if book.file and book.file.format else "未知"
     file_size = format_size(book.file.size) if book.file else "未知"
     word_count = book.file.word_count if book.file else 0
-    display_filename = f"{book.title}.{book.file.extension}" if book.file and book.file.extension else book.title
+    language = book.language or (book.file.language if book.file else None) or ""
+
+    def format_language(v: str) -> str:
+        key = v.strip().lower().replace("_", "-")
+        if key in {"zh", "zh-cn", "zh-hans", "zh-hans-cn"}:
+            return "简体中文"
+        if key in {"zh-tw", "zh-hk", "zh-hant", "zh-hant-tw", "zh-hant-hk"}:
+            return "繁体中文"
+        if key in {"en", "en-us", "en-gb"}:
+            return "英文"
+        return escape_html(v) if v else "未知"
 
     fmt_display = file_format.upper() if file_format != "未知" else "未知"
+    safe_title = escape_html(book.title)
+    safe_author = escape_html(book.author or "Unknown")
+    safe_description = escape_html(description)
+    language_display = format_language(language)
     lines = [
-        f"书名：{book.title}",
-        f"文件：{display_filename}",
-        f"作者：{book.author or 'Unknown'}",
-        f"文库：{fmt_display}·{file_size}·{format_word_count(word_count)}字·{book.rating_count}R",
+        f"书名: {safe_title}",
+        f"作者: {safe_author}",
+        f"文库: {language_display} | {fmt_display} | {file_size} | {format_word_count(word_count)}字 | {book.rating_count}R | {book.comment_count}笔",
         "",
-        f"统计：{book.view_count}热度｜{book.download_count}下载｜{book.like_count}点赞｜{book.favorite_count}收藏",
-        f"评分：{book.rating_score:.2f}分({book.rating_count}人)",
-        f"质量：{book.quality_score:.2f}分({book.rating_count}人)",
+        f"统计: {book.view_count}热度 | {book.download_count}下载 | {book.like_count}点赞 | {book.favorite_count}收藏",
+        f"评分: {book.rating_score:.2f}分({book.rating_count}人)",
+        f"质量: {book.quality_score:.2f}分({book.rating_count}人)",
         "",
-        f"标签：{tags_display}",
+        f"标签: {tags_display}",
         "",
-        f"<blockquote>{description}</blockquote>",
+        f"<blockquote>{safe_description}</blockquote>",
         "",
-        f"创建：{format_date(book.created_at)}",
-        f"更新：{format_date(book.updated_at)}",
-        f"上传：{uploader_name}",
+        f"创建: {format_date(book.created_at)}",
+        f"更新: {format_date(book.updated_at)}",
+        f"上传: {uploader_name}",
     ]
     caption = "\n".join(lines)
     if len(caption) <= 980:
@@ -184,6 +231,12 @@ async def send_book_card(
         session_factory = get_session_factory()
         async with session_factory() as session:
             u = await session.scalar(select(User).where(User.id == from_user.id))
+            if u and u.is_banned:
+                await bot.send_message(chat_id, "❌ 账号已被限制使用")
+                return
+            if book.is_vip_only and not (u and u.is_vip):
+                await bot.send_message(chat_id, "🔒 本书仅会员可获取")
+                return
             is_admin = bool(u and u.is_admin)
             fav = await session.scalar(
                 select(Favorite).where(
@@ -196,8 +249,15 @@ async def send_book_card(
     if is_admin:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [
+                InlineKeyboardButton(text="频道", callback_data="book:channel"),
+                InlineKeyboardButton(text="群组", callback_data="book:group"),
+                InlineKeyboardButton(text="反馈", callback_data="book:feedback"),
+                InlineKeyboardButton(text="捐赠", callback_data="book:donate"),
+            ],
+            [
                 InlineKeyboardButton(text="删除标签", callback_data=f"book:tagdel:{book_id}"),
                 InlineKeyboardButton(text="举报书籍", callback_data=f"book:report:{book_id}"),
+                InlineKeyboardButton(text="编辑书籍", callback_data=f"book:edit:{book_id}"),
             ],
             [
                 InlineKeyboardButton(text="编辑历史", callback_data=f"book:history:{book_id}"),
@@ -206,21 +266,7 @@ async def send_book_card(
             ],
         ])
     else:
-        fav_text = "❤️收藏书籍" if not is_fav else "💔取消收藏"
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text=fav_text, callback_data=f"book:fav:{book_id}"),
-                InlineKeyboardButton(text="+加标签", callback_data=f"book:tagadd:{book_id}"),
-            ],
-            [
-                InlineKeyboardButton(text="找相似", callback_data=f"book:similar:{book_id}"),
-                InlineKeyboardButton(text="*更多", callback_data=f"book:more:{book_id}"),
-            ],
-            [
-                InlineKeyboardButton(text="❌关闭", callback_data="close"),
-                InlineKeyboardButton(text="◀️返回", callback_data="close"),
-            ],
-        ])
+        keyboard = build_user_book_keyboard(book_id=book_id, is_fav=is_fav)
 
     sent = False
     if primary_ref and primary_ref.tg_file_id:
@@ -286,6 +332,17 @@ async def on_book_callback(callback: CallbackQuery):
         elif action.startswith("fav:"):
             book_id = int(action.replace("fav:", ""))
             await handle_favorite(callback, book_id)
+        elif action.startswith("booklist:"):
+            book_id = int(action.replace("booklist:", ""))
+            await show_booklist_menu(callback, book_id)
+        elif action.startswith("booklist_back:"):
+            book_id = int(action.replace("booklist_back:", ""))
+            await hide_booklist_menu(callback, book_id)
+        elif action.startswith("booklist_new:"):
+            await callback.answer("功能开发中...", show_alert=True)
+        elif action.startswith("booklist_sel:"):
+            book_id = int(action.replace("booklist_sel:", ""))
+            await handle_booklist_select(callback, book_id)
         elif action.startswith("report:"):
             book_id = int(action.replace("report:", ""))
             await handle_report(callback, book_id)
@@ -299,9 +356,19 @@ async def on_book_callback(callback: CallbackQuery):
             await callback.answer("功能开发中...", show_alert=True)
         elif action.startswith("history:"):
             await callback.answer("功能开发中...", show_alert=True)
+        elif action.startswith("edit:"):
+            await callback.answer("功能开发中...", show_alert=True)
         elif action.startswith("review:"):
             await callback.answer("功能开发中...", show_alert=True)
         elif action.startswith("share:"):
+            await callback.answer("功能开发中...", show_alert=True)
+        elif action == "channel":
+            await callback.answer("@BookFather", show_alert=True)
+        elif action == "group":
+            await callback.answer("群组入口暂未配置", show_alert=True)
+        elif action == "feedback":
+            await callback.answer("请私聊反馈给管理员", show_alert=True)
+        elif action == "donate":
             await callback.answer("功能开发中...", show_alert=True)
         else:
             await callback.answer("⚠️ 未知的操作")
@@ -353,6 +420,9 @@ async def handle_favorite(callback: CallbackQuery, book_id: int):
             session.add(user)
             await session.commit()
             await session.refresh(user)
+        if user.is_banned:
+            await callback.answer("❌ 账号已被限制使用", show_alert=True)
+            return
 
         stmt = select(Favorite).where(
             Favorite.user_id == user.id,
@@ -370,17 +440,109 @@ async def handle_favorite(callback: CallbackQuery, book_id: int):
 
         if fav:
             await session.delete(fav)
-            if book.favorite_count and book.favorite_count > 0:
-                book.favorite_count -= 1
+            await session.execute(
+                update(Book)
+                .where(Book.id == book_id, Book.favorite_count > 0)
+                .values(favorite_count=Book.favorite_count - 1)
+            )
             await session.commit()
-            await callback.answer("💔 已取消收藏", show_alert=True)
+            try:
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_user_book_keyboard(book_id=book_id, is_fav=False)
+                )
+            except Exception:
+                pass
+            await callback.answer("已取消收藏")
             return
 
-        session.add(Favorite(user_id=user.id, book_id=book_id))
-        book.favorite_count += 1
-        await session.commit()
+        try:
+            session.add(Favorite(user_id=user.id, book_id=book_id))
+            await session.execute(
+                update(Book)
+                .where(Book.id == book_id)
+                .values(favorite_count=Book.favorite_count + 1)
+            )
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            await callback.answer("已添加到我喜欢的书籍")
+            return
 
-    await callback.answer("❤️ 已添加到收藏夹", show_alert=True)
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=build_user_book_keyboard(book_id=book_id, is_fav=True)
+        )
+    except Exception:
+        pass
+    await callback.answer("已添加到我喜欢的书籍")
+
+
+async def show_booklist_menu(callback: CallbackQuery, book_id: int) -> None:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        fav = await session.scalar(
+            select(Favorite).where(
+                Favorite.user_id == callback.from_user.id,
+                Favorite.book_id == book_id,
+            )
+        )
+        fav_count = await session.scalar(
+            select(func.count()).select_from(Favorite).where(Favorite.user_id == callback.from_user.id)
+        )
+        count = int(fav_count or 0)
+        is_selected = fav is not None
+
+    await callback.message.edit_reply_markup(
+        reply_markup=build_booklist_keyboard(book_id=book_id, count=count, selected=is_selected)
+    )
+    await callback.answer()
+
+
+async def hide_booklist_menu(callback: CallbackQuery, book_id: int) -> None:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        fav = await session.scalar(
+            select(Favorite).where(
+                Favorite.user_id == callback.from_user.id,
+                Favorite.book_id == book_id,
+            )
+        )
+    await callback.message.edit_reply_markup(
+        reply_markup=build_user_book_keyboard(book_id=book_id, is_fav=fav is not None)
+    )
+    await callback.answer()
+
+
+async def handle_booklist_select(callback: CallbackQuery, book_id: int) -> None:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        fav = await session.scalar(
+            select(Favorite).where(
+                Favorite.user_id == callback.from_user.id,
+                Favorite.book_id == book_id,
+            )
+        )
+        if fav is None:
+            try:
+                session.add(Favorite(user_id=callback.from_user.id, book_id=book_id))
+                await session.execute(
+                    update(Book)
+                    .where(Book.id == book_id)
+                    .values(favorite_count=Book.favorite_count + 1)
+                )
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+
+        fav_count = await session.scalar(
+            select(func.count()).select_from(Favorite).where(Favorite.user_id == callback.from_user.id)
+        )
+        count = int(fav_count or 0)
+
+    await callback.message.edit_reply_markup(
+        reply_markup=build_booklist_keyboard(book_id=book_id, count=count, selected=True)
+    )
+    await callback.answer("已添加到我喜欢的书籍")
 
 
 async def record_download(
@@ -431,7 +593,7 @@ async def record_download(
         await session.commit()
 
 
-async def handle_report(callback: CallbackQuery, book_id: str):
+async def handle_report(callback: CallbackQuery, book_id: int):
     """处理举报请求"""
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -457,21 +619,27 @@ async def handle_report(callback: CallbackQuery, book_id: str):
         ],
     ])
 
-    await callback.message.edit_text(
+    await callback.message.answer(
         "⚠️ <b>举报书籍</b>\n\n"
         "请选择举报原因:",
         reply_markup=keyboard
     )
     await callback.answer()
 
+@book_detail_router.callback_query(F.data.startswith("report:"))
+async def on_report_reason(callback: CallbackQuery):
+    parts = (callback.data or "").split(":", 2)
+    if len(parts) != 3:
+        await callback.answer("⚠️ 无效的举报数据", show_alert=True)
+        return
+    _, book_id_raw, reason = parts
+    try:
+        book_id = int(book_id_raw)
+    except ValueError:
+        await callback.answer("⚠️ 无效的书籍ID", show_alert=True)
+        return
 
-@book_detail_router.callback_query(F.data == "goto:search")
-async def on_goto_search(callback: CallbackQuery):
-    """跳转到搜索"""
-    await callback.message.edit_text(
-        "🔍 <b>开始搜索</b>\n\n"
-        "请直接发送关键词，或使用:\n"
-        "• <code>/s 关键词</code> - 搜索书名/作者\n"
-        "• <code>/ss 关键词</code> - 搜索标签/主角"
+    logger.warning(
+        f"收到举报: book_id={book_id} reason={reason} from_user={callback.from_user.id}"
     )
-    await callback.answer()
+    await callback.answer("✅ 已收到举报", show_alert=True)

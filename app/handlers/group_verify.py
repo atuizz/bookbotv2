@@ -14,6 +14,9 @@ from aiogram.filters import Command
 from aiogram.types import Message, ChatJoinRequest
 
 from app.core.logger import logger
+from app.core.database import get_session_factory
+from app.core.models import User
+from sqlalchemy import select
 
 group_verify_router = Router(name="group_verify")
 
@@ -171,10 +174,12 @@ async def cmd_code_status(message: Message):
     """
     user_id = message.from_user.id
 
-    # TODO: 添加管理员权限检查
-    # if not is_admin(user_id):
-    #     await message.answer("❌ 您没有权限执行此命令")
-    #     return
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        user = await session.scalar(select(User).where(User.id == user_id))
+        if not (user and user.is_admin):
+            await message.answer("❌ 您没有权限执行此命令")
+            return
 
     total_codes = len(_verification_codes)
     used_codes = sum(1 for info in _verification_codes.values() if info["is_used"])

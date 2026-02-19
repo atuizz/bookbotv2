@@ -8,7 +8,7 @@ import asyncio
 
 from aiogram import Router, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from app.core.logger import logger
 from app.core.database import get_session_factory
@@ -17,6 +17,43 @@ from sqlalchemy import select, func
 from app.handlers.book_detail import send_book_card
 
 common_router = Router(name="common")
+
+HELP_TEXT = (
+    "搜书神器是一个免费的Telegram机器人,致力于让每个人都能自由获取知识。我们鼓励分享优秀文化内容,希望打造高质量的知识共享库,让所有人都能够免费阅读。\n\n"
+    "<blockquote>TG 最好用的智能搜书机器人</blockquote>\n\n"
+    "新手指南:\n\n"
+    "1.贡献等级\n"
+    "使用贡献划分等级，从低到高分为黑铁、青铜、白银、黄金、钻石5个段位，拥有不同权限。\n"
+    "2.怎么获得贡献值?\n"
+    "上传书籍、邀请书友、书籍被好评、捐赠会员。\n"
+    "3.怎么获得书币?\n"
+    "自动签到、上传书籍、邀请注册、书籍被好评、捐赠会员。\n"
+    "4.怎么搜书?\n"
+    "/s+关键词，搜索书名和作者\n"
+    "/ss+关键词，搜索书籍的标签\n"
+    "5.下载书籍\n"
+    "消耗账户1书币（优先使用签到获得的赠币）\n"
+    "7天内重复下载不消耗书币，收藏书籍7天后下载不消耗书币，或自己上传的书籍7天后下载不消耗书币\n"
+    "6.如何上传书籍?\n"
+    "直接发送或转发书籍文件给我 @sosdbot\n"
+    "7.如何邀请书友?\n"
+    "/my 获得邀请链接,快速获得书币,极速邀请青铜捐赠会员后，邀请者获得书币奖励（无视每天下载封顶）\n"
+    "8.捐赠会员有什么?\n"
+    "一次性获得永久会员和书币（用来提升等级和下载书籍）\n"
+    "等级权限翻倍（每天自动签到翻倍），优先体验新功能\n\n"
+    "关注BOT频道获取更多信息,有问题找BokFather\n"
+    "常用命令 /help /my /book /booklist /info /topuser /review\n\n"
+    "<blockquote>请考虑捐赠以支持我们提供更安全、更稳定、更智能、更丰富的服务。</blockquote>"
+)
+
+HELP_KEYBOARD = InlineKeyboardMarkup(
+    inline_keyboard=[
+        [
+            InlineKeyboardButton(text="邀请书友使用", callback_data="help:invite"),
+            InlineKeyboardButton(text="捐赠会员计划", callback_data="help:donate"),
+        ]
+    ]
+)
 
 
 @common_router.message(Command("start"))
@@ -40,21 +77,12 @@ async def cmd_start(message: Message):
         )
         return
 
-    welcome_text = f"""
-👋 欢迎使用 <b>搜书神器 V2</b>!
-
-📚 <b>我能帮你做什么？</b>
-• 搜索海量电子书资源
-• 支持多种格式 (TXT, PDF, EPUB, MOBI)
-• 智能推荐，精准匹配
-
-🔍 <b>如何使用？</b>
-• 直接发送关键词: <code>剑来</code>
-• 使用搜索命令: <code>/s 剑来</code>
-• 查看帮助: <code>/help</code>
-
-💡 <b>提示：</b>上传你的书籍，还能获得书币奖励哦！
-"""
+    welcome_text = (
+        "搜书神器是一个免费的 Telegram 机器人，致力于让每个人都能自由获取知识。我们提供了优秀的分享型文化内容，希望打造高质量的知识共享平台，让所有人都能轻松阅读。\n\n"
+        "发送 /s 关键词 直接搜索书名，作者\n"
+        "发送 /ss 关键词 可以搜索主角，标签\n\n"
+        "更多帮助请点击: /help"
+    )
     await message.answer(welcome_text)
 
     async def ensure_user() -> None:
@@ -95,31 +123,7 @@ async def cmd_cancel(message: Message):
 @common_router.message(Command("help"))
 async def cmd_help(message: Message):
     """处理 /help 命令"""
-    help_text = (
-        "搜书神器是一个免费的 Telegram 机器人，致力于让每个人都能自由获取知识。我们提供了优秀的分享型文化内容，希望打造高质量的知识共享平台，让所有人都能轻松阅读。\n\n"
-        "<blockquote>TG 最好用的智能搜书机器人</blockquote>\n\n"
-        "<b>新手指南:</b>\n"
-        "1. <b>如何升级</b>：使用贡献划分等级，从低到高为黑铁、青铜、白银、黄金、钻石 5 个段位。\n"
-        "2. <b>怎么获得贡献值</b>：上传书籍、邀请好友、书籍被好评、捐赠会员。\n"
-        "3. <b>怎么得书币</b>：自动签到、上传书籍、邀请注册、书籍被好评、捐赠会员。\n"
-        "4. <b>怎么搜书</b>：\n"
-        "   /s+关键词，搜索书名/作者\n"
-        "   /ss+关键词，搜索主角/标签\n"
-        "5. <b>下载书籍/电子书</b>：消耗书币（优先使用签到获得的账户）。\n"
-        "6. <b>如何上传书籍</b>：直接发送文档/电子书文件给我。\n"
-        "7. <b>如何邀请好友</b>：/my 获取专属邀请链接。\n"
-        "8. <b>捐赠会员有什么</b>：一次性获得永久会员与书币（用于提升等级和下载书籍）。\n\n"
-        "关注 BOT 频道获取更多信息：@BookFather\n"
-        "常用命令：/help /my /book /booklist /info /topuser /review\n\n"
-        "<blockquote>请注意：请勿上传违规内容，避免争议，更爱你。愿书店的那扇门，永远对你关闭。</blockquote>"
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="邀请好友使用", callback_data="help:invite"),
-            InlineKeyboardButton(text="捐赠会员计划", callback_data="help:donate"),
-        ]
-    ])
-    await message.answer(help_text, reply_markup=keyboard)
+    await message.answer(HELP_TEXT, reply_markup=HELP_KEYBOARD)
 
 
 @common_router.message(Command("about"))

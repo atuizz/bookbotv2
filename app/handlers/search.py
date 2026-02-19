@@ -20,6 +20,7 @@ from aiogram.exceptions import TelegramAPIError
 
 from app.core.logger import logger
 from app.core.config import get_settings
+from app.core.text import escape_html
 from app.services.search import (
     get_search_service,
     SearchFilters,
@@ -157,9 +158,8 @@ def build_search_result_text(
     start_idx = (page - 1) * per_page + 1
     end_idx = min(start_idx + len(hits) - 1, total)
 
-    lines = [
-        f"🔍 搜索作品/作者:<b>{query}</b> Results {start_idx}-{end_idx} of {total} (用时 {processing_time:.2f} 秒)"
-    ]
+    safe_query = escape_html(query)
+    lines = [f"🔍 搜索作品/作者:<b>{safe_query}</b> Results {start_idx}-{end_idx} of {total} (用时 {processing_time:.2f} 秒)"]
 
     # 结果列表
     bot_username = (bot_username or "").lstrip("@")
@@ -172,7 +172,8 @@ def build_search_result_text(
             flag = " ⭐"
 
         link = f"https://t.me/{bot_username}?start=book_{book.id}" if bot_username else ""
-        title = f"<a href=\"{link}\">{book.title}</a>" if link else book.title
+        safe_title = escape_html(book.title)
+        title = f"<a href=\"{escape_html(link)}\">{safe_title}</a>" if link else safe_title
         prefix = "❓ " if (book.rating_score <= 0 and book.quality_score <= 0) else ""
         title_line = f"{idx:02d}. {prefix}{title}{flag}"
         lines.append(title_line)
@@ -189,6 +190,25 @@ def build_search_result_text(
     lines.append("💎 捐赠会员：提升等级获得书币，享受权限增值，优先体验功能")
 
     return "\n".join(lines)
+
+
+def get_content_rating_label(filters: Optional[Dict]) -> str:
+    filters = filters or {}
+    value = filters.get("content_rating")
+    if value == "safe":
+        return "安全"
+    if value == "teen":
+        return "少年"
+    if value == "unknown":
+        return "未知"
+    return "全部"
+
+
+def build_no_result_text(filters: Optional[Dict] = None) -> str:
+    return (
+        "没有检索到结果，请尝试其他关键词或调整筛选条件\n"
+        f"内容分级:{get_content_rating_label(filters)}"
+    )
 
 
 def build_search_keyboard(
@@ -225,36 +245,174 @@ def build_search_keyboard(
             page_row.append(InlineKeyboardButton(text=f"...{total_pages}", callback_data=f"search:page:{total_pages}"))
     keyboard.append(page_row)
 
-    # 第2行：筛选
-    is_18plus = filters.get("is_18plus")
-    if is_18plus is True:
-        rating_text = "分级:成人∨"
-    elif is_18plus is False:
-        rating_text = "分级:全年龄∨"
-    else:
-        rating_text = "分级∨"
+    menu = (filters.get("_menu") or "").strip()
 
-    fmt = filters.get("format") or ""
-    fmt_text = f"格式:{fmt.upper()}∨" if fmt else "格式∨"
+    def arrow(name: str) -> str:
+        return "▲" if menu == name else "▼"
 
-    max_size = filters.get("max_size")
-    if isinstance(max_size, int) and max_size > 0:
-        size_text = f"体积≤{int(max_size / (1024 * 1024))}M∨"
-    else:
-        size_text = "体积∨"
+    rating_label = get_content_rating_label(filters)
+    rating_text = f"分级:{rating_label}{arrow('rating')}" if rating_label != "全部" else f"分级{arrow('rating')}"
 
-    min_words = filters.get("min_word_count")
-    if isinstance(min_words, int) and min_words > 0:
-        words_text = f"字数≥{int(min_words / 10000)}万∨"
-    else:
-        words_text = "字数∨"
+    fmt_value = (filters.get("format") or "").strip().upper()
+    fmt_text = f"格式:{fmt_value}{arrow('format')}" if fmt_value else f"格式{arrow('format')}"
 
-    keyboard.append([
-        InlineKeyboardButton(text=rating_text, callback_data="search:filter:rating"),
-        InlineKeyboardButton(text=fmt_text, callback_data="search:filter:format"),
-        InlineKeyboardButton(text=size_text, callback_data="search:filter:size"),
-        InlineKeyboardButton(text=words_text, callback_data="search:filter:words"),
-    ])
+    size_range = (filters.get("size_range") or "").strip()
+    size_text = f"体积{arrow('size')}" if not size_range or size_range == "all" else f"体积:{size_range}{arrow('size')}"
+
+    words_range = (filters.get("words_range") or "").strip()
+    words_text = f"字数{arrow('words')}" if not words_range or words_range == "all" else f"字数:{words_range}{arrow('words')}"
+
+    keyboard.append(
+        [
+            InlineKeyboardButton(text=rating_text, callback_data="search:filter:rating"),
+            InlineKeyboardButton(text=fmt_text, callback_data="search:filter:format"),
+            InlineKeyboardButton(text=size_text, callback_data="search:filter:size"),
+            InlineKeyboardButton(text=words_text, callback_data="search:filter:words"),
+        ]
+    )
+
+    def selected_text(is_selected: bool, text: str) -> str:
+        return f"✅{text}" if is_selected else text
+
+    if menu == "rating":
+        current = (filters.get("content_rating") or "all").strip()
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=selected_text(current == "all", "全部"),
+                    callback_data="search:filter:rating:all",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "safe", "安全🛟"),
+                    callback_data="search:filter:rating:safe",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "adult", "成人🔞"),
+                    callback_data="search:filter:rating:adult",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "unknown", "未知❓"),
+                    callback_data="search:filter:rating:unknown",
+                ),
+            ]
+        )
+
+    if menu == "format":
+        current = (filters.get("format") or "").strip().lower()
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=selected_text(current == "", "全部"),
+                    callback_data="search:filter:format:all",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "txt", "TXT"),
+                    callback_data="search:filter:format:txt",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "pdf", "PDF"),
+                    callback_data="search:filter:format:pdf",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "epub", "EPUB"),
+                    callback_data="search:filter:format:epub",
+                ),
+            ]
+        )
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=selected_text(current == "azw3", "AZW3"),
+                    callback_data="search:filter:format:azw3",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "mobi", "MOBI"),
+                    callback_data="search:filter:format:mobi",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "docx", "DOCX"),
+                    callback_data="search:filter:format:docx",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "rtf", "RTF"),
+                    callback_data="search:filter:format:rtf",
+                ),
+            ]
+        )
+
+    if menu == "size":
+        current = (filters.get("size_key") or "all").strip()
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=selected_text(current == "all", "全部"),
+                    callback_data="search:filter:size:all",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "lt300k", "300KB以下"),
+                    callback_data="search:filter:size:lt300k",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "300k_1m", "300KB-1MB"),
+                    callback_data="search:filter:size:300k_1m",
+                ),
+            ]
+        )
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=selected_text(current == "1m_3m", "1MB-3MB"),
+                    callback_data="search:filter:size:1m_3m",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "3m_8m", "3MB-8MB"),
+                    callback_data="search:filter:size:3m_8m",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "8m_20m", "8MB-20MB"),
+                    callback_data="search:filter:size:8m_20m",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "20m_plus", "20MB以上"),
+                    callback_data="search:filter:size:20m_plus",
+                ),
+            ]
+        )
+
+    if menu == "words":
+        current = (filters.get("words_key") or "all").strip()
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=selected_text(current == "all", "全部"),
+                    callback_data="search:filter:words:all",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "lt30w", "30万字以下"),
+                    callback_data="search:filter:words:lt30w",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "30w_50w", "30-50万字"),
+                    callback_data="search:filter:words:30w_50w",
+                ),
+            ]
+        )
+        keyboard.append(
+            [
+                InlineKeyboardButton(
+                    text=selected_text(current == "50w_100w", "50-100万字"),
+                    callback_data="search:filter:words:50w_100w",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "100w_200w", "100-200万字"),
+                    callback_data="search:filter:words:100w_200w",
+                ),
+                InlineKeyboardButton(
+                    text=selected_text(current == "200w_plus", "200万字以上"),
+                    callback_data="search:filter:words:200w_plus",
+                ),
+            ]
+        )
 
     # 第3行：排序（点按选择）
     sort_key = filters.get("sort", "popular")
@@ -361,7 +519,7 @@ async def perform_search(
     filters = filters or {}
 
     # 发送"搜索中"提示
-    status_message = await message.answer(f"🔍 正在搜索: <b>{query}</b>...")
+    status_message = await message.answer(f"🔍 正在搜索: <b>{escape_html(query)}</b>...")
 
     try:
         # 获取搜索服务
@@ -373,10 +531,14 @@ async def perform_search(
             search_filters.format = filters["format"]
         if filters.get("is_18plus") is not None:
             search_filters.is_18plus = filters["is_18plus"]
+        if filters.get("min_size") is not None:
+            search_filters.min_size = filters["min_size"]
         if filters.get("max_size") is not None:
             search_filters.max_size = filters["max_size"]
         if filters.get("min_word_count") is not None:
             search_filters.min_word_count = filters["min_word_count"]
+        if filters.get("max_word_count") is not None:
+            search_filters.max_word_count = filters["max_word_count"]
 
         # 构建排序
         sort_mapping = {
@@ -408,13 +570,7 @@ async def perform_search(
 
         if response.total == 0:
             # 无结果
-            await message.answer(
-                f"😔 未找到与 <b>{query}</b> 相关的书籍\n\n"
-                f"💡 建议:\n"
-                f"• 检查关键词拼写\n"
-                f"• 尝试使用更通用的关键词\n"
-                f"• 使用 /ss 命令搜索标签/主角"
-            )
+            await message.answer(build_no_result_text(filters))
             return
 
         # 构建结果文本
@@ -470,7 +626,6 @@ async def on_search_callback(callback: CallbackQuery):
         if action == "page":
             # 翻页
             new_page = int(parts[2])
-            await callback.message.edit_text("🔍 加载中...")
             await perform_search_edit(
                 callback.message,
                 query,
@@ -481,9 +636,9 @@ async def on_search_callback(callback: CallbackQuery):
             await callback.answer()
 
         elif action == "filter":
-            # 筛选操作
             filter_type = parts[2] if len(parts) > 2 else ""
-            await handle_filter_callback(callback, filter_type, query, filters)
+            option = parts[3] if len(parts) > 3 else None
+            await handle_filter_callback(callback, filter_type, option, query, filters)
 
         elif action == "sort":
             sort_key = parts[2] if len(parts) > 2 else ""
@@ -495,7 +650,6 @@ async def on_search_callback(callback: CallbackQuery):
             if cache_data:
                 cache_data["filters"] = filters
                 _search_cache.set(user_id, cache_data)
-            await callback.message.edit_text("🔍 应用排序中...")
             await perform_search_edit(
                 callback.message,
                 query,
@@ -532,87 +686,117 @@ async def on_search_callback(callback: CallbackQuery):
 async def handle_filter_callback(
     callback: CallbackQuery,
     filter_type: str,
+    option: Optional[str],
     query: str,
     current_filters: Dict,
 ):
     """处理筛选回调"""
     user_id = callback.from_user.id
 
-    if filter_type == "format":
-        # 循环切换格式筛选
-        formats = ["", "txt", "pdf", "epub", "mobi"]
-        current = current_filters.get("format", "")
-        try:
-            idx = formats.index(current)
-            next_format = formats[(idx + 1) % len(formats)]
-        except ValueError:
-            next_format = formats[1] if formats else ""
-
-        current_filters["format"] = next_format
-
-    elif filter_type == "sort":
-        # 循环切换排序
-        sorts = ["popular", "newest", "largest"]
-        current = current_filters.get("sort", "popular")
-        try:
-            idx = sorts.index(current)
-            next_sort = sorts[(idx + 1) % len(sorts)]
-        except ValueError:
-            next_sort = sorts[0]
-
-        current_filters["sort"] = next_sort
-
-    elif filter_type in {"adult", "rating"}:
-        # 循环切换成人内容筛选
-        current = current_filters.get("is_18plus")
-        if current is None:
-            current_filters["is_18plus"] = False
-        elif current is False:
-            current_filters["is_18plus"] = True
-        else:
-            current_filters["is_18plus"] = None
-
-    elif filter_type == "size":
-        sizes = [None, 1, 5, 20, 50, 100]
-        current = current_filters.get("max_size")
-        current_mb = int(current / (1024 * 1024)) if isinstance(current, int) and current > 0 else None
-        try:
-            idx = sizes.index(current_mb)
-            next_mb = sizes[(idx + 1) % len(sizes)]
-        except ValueError:
-            next_mb = sizes[1]
-        current_filters["max_size"] = next_mb * 1024 * 1024 if next_mb else None
-
-    elif filter_type == "words":
-        words = [None, 1, 5, 10, 30, 50]
-        current = current_filters.get("min_word_count")
-        current_wan = int(current / 10000) if isinstance(current, int) and current > 0 else None
-        try:
-            idx = words.index(current_wan)
-            next_wan = words[(idx + 1) % len(words)]
-        except ValueError:
-            next_wan = words[1]
-        current_filters["min_word_count"] = next_wan * 10000 if next_wan else None
-
-    elif filter_type == "clear":
-        # 清除所有筛选
-        current_filters.clear()
-        await callback.answer("✅ 已清除所有筛选", show_alert=True)
-
-    else:
-        await callback.answer(f"未知的筛选类型: {filter_type}")
+    menu_key = "_menu"
+    if option is None:
+        current_menu = (current_filters.get(menu_key) or "").strip()
+        current_filters[menu_key] = "" if current_menu == filter_type else filter_type
+        cache_data = _search_cache.get(user_id)
+        if not cache_data or not cache_data.get("last_response"):
+            await callback.answer()
+            return
+        cache_data["filters"] = current_filters
+        _search_cache.set(user_id, cache_data)
+        keyboard = build_search_keyboard(cache_data["last_response"], user_id, current_filters)
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        await callback.answer()
         return
 
+    if filter_type == "rating":
+        if option == "safe":
+            current_filters["content_rating"] = "safe"
+            current_filters["is_18plus"] = False
+        elif option == "adult":
+            current_filters["content_rating"] = "adult"
+            current_filters["is_18plus"] = True
+        elif option == "unknown":
+            current_filters["content_rating"] = "unknown"
+            current_filters["is_18plus"] = None
+        else:
+            current_filters["content_rating"] = "all"
+            current_filters["is_18plus"] = None
+
+    if filter_type == "format":
+        if option == "all":
+            current_filters["format"] = ""
+        else:
+            current_filters["format"] = option
+
+    if filter_type == "size":
+        kb = 1024
+        mb = 1024 * 1024
+        key = option
+        current_filters["size_key"] = key
+        current_filters.pop("min_size", None)
+        current_filters.pop("max_size", None)
+        if key == "lt300k":
+            current_filters["max_size"] = 300 * kb
+            current_filters["size_range"] = "300KB以下"
+        elif key == "300k_1m":
+            current_filters["min_size"] = 300 * kb
+            current_filters["max_size"] = 1 * mb
+            current_filters["size_range"] = "300KB-1MB"
+        elif key == "1m_3m":
+            current_filters["min_size"] = 1 * mb
+            current_filters["max_size"] = 3 * mb
+            current_filters["size_range"] = "1MB-3MB"
+        elif key == "3m_8m":
+            current_filters["min_size"] = 3 * mb
+            current_filters["max_size"] = 8 * mb
+            current_filters["size_range"] = "3MB-8MB"
+        elif key == "8m_20m":
+            current_filters["min_size"] = 8 * mb
+            current_filters["max_size"] = 20 * mb
+            current_filters["size_range"] = "8MB-20MB"
+        elif key == "20m_plus":
+            current_filters["min_size"] = 20 * mb
+            current_filters["size_range"] = "20MB以上"
+        else:
+            current_filters["size_key"] = "all"
+            current_filters["size_range"] = "all"
+
+    if filter_type == "words":
+        key = option
+        current_filters["words_key"] = key
+        current_filters.pop("min_word_count", None)
+        current_filters.pop("max_word_count", None)
+        if key == "lt30w":
+            current_filters["max_word_count"] = 300_000
+            current_filters["words_range"] = "30万字以下"
+        elif key == "30w_50w":
+            current_filters["min_word_count"] = 300_000
+            current_filters["max_word_count"] = 500_000
+            current_filters["words_range"] = "30-50万字"
+        elif key == "50w_100w":
+            current_filters["min_word_count"] = 500_000
+            current_filters["max_word_count"] = 1_000_000
+            current_filters["words_range"] = "50-100万字"
+        elif key == "100w_200w":
+            current_filters["min_word_count"] = 1_000_000
+            current_filters["max_word_count"] = 2_000_000
+            current_filters["words_range"] = "100-200万字"
+        elif key == "200w_plus":
+            current_filters["min_word_count"] = 2_000_000
+            current_filters["words_range"] = "200万字以上"
+        else:
+            current_filters["words_key"] = "all"
+            current_filters["words_range"] = "all"
+
+    current_filters[menu_key] = ""
+
     # 更新缓存
-    # _search_cache[user_id]["filters"] = current_filters
-    # 使用 get 获取并更新
     cache_data = _search_cache.get(user_id)
     if cache_data:
         cache_data["filters"] = current_filters
         _search_cache.set(user_id, cache_data)
 
     # 重新搜索 (回到第1页)
-    await callback.message.edit_text("🔍 应用筛选中...")
     await perform_search_edit(
         callback.message,
         query,
@@ -646,10 +830,14 @@ async def perform_search_edit(
             search_filters.format = filters["format"]
         if filters.get("is_18plus") is not None:
             search_filters.is_18plus = filters["is_18plus"]
+        if filters.get("min_size") is not None:
+            search_filters.min_size = filters["min_size"]
         if filters.get("max_size") is not None:
             search_filters.max_size = filters["max_size"]
         if filters.get("min_word_count") is not None:
             search_filters.min_word_count = filters["min_word_count"]
+        if filters.get("max_word_count") is not None:
+            search_filters.max_word_count = filters["max_word_count"]
 
         # 构建排序
         sort_mapping = {
@@ -677,13 +865,7 @@ async def perform_search_edit(
         })
 
         if response.total == 0:
-            await message.edit_text(
-                f"😔 未找到与 <b>{query}</b> 相关的书籍\n\n"
-                f"💡 建议:\n"
-                f"• 检查关键词拼写\n"
-                f"• 尝试使用更通用的关键词\n"
-                f"• 使用 /ss 命令搜索标签/主角"
-            )
+            await message.answer(build_no_result_text(filters))
             return
 
         # 构建结果文本

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.handlers.search import (
     build_search_result_text,
     build_search_keyboard,
+    build_no_result_text,
     format_size,
     format_word_count,
     get_rating_stars,
@@ -118,6 +119,15 @@ class TestBuildSearchResultText:
         text = build_search_result_text(mock_response)
         assert "🔞" in text
 
+    def test_result_escapes_html(self, mock_response):
+        mock_response.query = "<b>Q</b>"
+        mock_response.hits[0].title = "<i>T</i>"
+        text = build_search_result_text(mock_response)
+        assert "<b>Q</b>" not in text
+        assert "&lt;b&gt;Q&lt;/b&gt;" in text
+        assert "<i>T</i>" not in text
+        assert "&lt;i&gt;T&lt;/i&gt;" in text
+
 
 class TestBuildSearchKeyboard:
     """测试搜索键盘构建"""
@@ -197,6 +207,29 @@ class TestBuildSearchKeyboard:
             for text in all_texts
         )
         assert has_filter, "键盘应该有筛选按钮"
+
+    def test_keyboard_format_menu(self, mock_response):
+        keyboard = build_search_keyboard(
+            mock_response,
+            user_id=123,
+            filters={"_menu": "format", "format": "pdf"},
+        )
+        texts = [btn.text for row in keyboard.inline_keyboard for btn in row]
+        assert "✅PDF" in texts
+        assert "TXT" in texts
+
+    def test_keyboard_size_menu(self, mock_response):
+        keyboard = build_search_keyboard(
+            mock_response,
+            user_id=123,
+            filters={"_menu": "size", "size_key": "1m_3m", "size_range": "1MB-3MB"},
+        )
+        texts = [btn.text for row in keyboard.inline_keyboard for btn in row]
+        assert "✅1MB-3MB" in texts
+        assert "300KB以下" in texts
+
+    def test_no_result_text_contains_rating(self):
+        assert "内容分级:全部" in build_no_result_text({})
 
 
 # ============================================================================

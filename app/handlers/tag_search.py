@@ -15,7 +15,9 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 
+from app.core.config import get_settings
 from app.core.logger import logger
+from app.core.text import escape_html
 from app.handlers.search import (
     _search_cache,
     SearchCache,
@@ -74,7 +76,7 @@ async def perform_tag_search(
     filters = filters or {}
 
     # 发送"搜索中"提示
-    status_message = await message.answer(f"🔍 正在搜索标签/主角: <b>{query}</b>...")
+    status_message = await message.answer(f"🔍 正在搜索标签/主角: <b>{escape_html(query)}</b>...")
 
     try:
         # 获取搜索服务
@@ -120,7 +122,7 @@ async def perform_tag_search(
         if response.total == 0:
             # 无结果
             await message.answer(
-                f"😔 未找到与标签/主角 <b>{query}</b> 相关的书籍\n\n"
+                f"😔 未找到与标签/主角 <b>{escape_html(query)}</b> 相关的书籍\n\n"
                 f"💡 建议:\n"
                 f"• 检查关键词拼写\n"
                 f"• 尝试使用更通用的关键词\n"
@@ -129,7 +131,7 @@ async def perform_tag_search(
             return
 
         # 构建结果文本
-        result_text = build_search_result_text(response, filters)
+        result_text = build_search_result_text(response, get_settings().bot_username, filters)
 
         # 在结果前添加标签搜索标记
         result_text = f"🏷️ <b>标签/主角搜索</b>\n{result_text}"

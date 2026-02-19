@@ -20,6 +20,7 @@ from app.core.config import get_settings
 from app.core.logger import logger
 from app.core.database import get_session_factory
 from app.core.models import Book, File, User, FileRef, BookStatus, FileFormat
+from app.core.text import escape_html
 from app.services.search import get_search_service
 
 upload_router = Router(name="upload")
@@ -142,6 +143,7 @@ async def handle_document(message: Message):
 
     # 1. 校验文件格式
     file_name = document.file_name or "unknown"
+    safe_file_name = escape_html(file_name)
     file_ext = get_file_extension(file_name)
 
     if file_ext not in SUPPORTED_FORMATS:
@@ -176,7 +178,7 @@ async def handle_document(message: Message):
         return
 
     status_msg = await message.reply(
-        f"文件：{file_name}\n"
+        f"文件：{safe_file_name}\n"
         f"大小：{format_file_size(file_size)}\n"
         f"状态：加入队列，等待收录\n\n"
         f"排队(1) 成功(0) 失败(0)\n"
@@ -185,7 +187,7 @@ async def handle_document(message: Message):
 
     try:
         await status_msg.edit_text(
-            f"文件：{file_name}\n"
+            f"文件：{safe_file_name}\n"
             f"大小：{format_file_size(file_size)}\n"
             f"状态：正在收录，请稍候...\n\n"
             f"排队(1) 成功(0) 失败(0)\n"
@@ -200,7 +202,7 @@ async def handle_document(message: Message):
         # 更新状态
         await status_msg.edit_text(
             f"⏳ <b>正在处理上传...</b>\n\n"
-            f"📁 文件: <code>{file_name}</code>\n"
+            f"📁 文件: <code>{safe_file_name}</code>\n"
             f"📏 大小: {format_file_size(file_size)}\n\n"
             f"💾 正在保存文件..."
         )
@@ -356,7 +358,7 @@ async def handle_document(message: Message):
 
         if reward_coins == 0 and existing_book:
             await status_msg.edit_text(
-                f"文件：{file_name}\n"
+                f"文件：{safe_file_name}\n"
                 f"大小：{format_file_size(file_size)}\n"
                 f"状态：文件已存在，已跳过收录\n\n"
                 f"排队(0) 成功(1) 失败(0)\n"
@@ -365,7 +367,7 @@ async def handle_document(message: Message):
         else:
             status = "收录成功" if index_ok else "已入库，索引稍后补建后即可搜索"
             await status_msg.edit_text(
-                f"文件：{file_name}\n"
+                f"文件：{safe_file_name}\n"
                 f"大小：{format_file_size(file_size)}\n"
                 f"状态：{status}\n\n"
                 f"排队(0) 成功(1) 失败(0)\n"
@@ -382,7 +384,7 @@ async def handle_document(message: Message):
         logger.error(f"处理上传失败: {e}", exc_info=True)
         await status_msg.edit_text(
             f"❌ <b>上传处理失败</b>\n\n"
-            f"📁 文件: <code>{file_name}</code>\n"
+            f"📁 文件: <code>{safe_file_name}</code>\n"
             f"❗ 错误: <code>{str(e)[:100]}</code>\n\n"
             f"💡 请重试或联系管理员"
         )

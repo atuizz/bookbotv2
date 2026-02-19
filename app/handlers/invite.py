@@ -7,6 +7,7 @@
 import hashlib
 from datetime import datetime
 from typing import Dict, Optional
+from urllib.parse import quote
 
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -19,6 +20,7 @@ from aiogram.types import (
 
 from app.core.config import get_settings
 from app.core.logger import logger
+from app.core.text import escape_html
 
 invite_router = Router(name="invite")
 
@@ -57,6 +59,50 @@ def get_invite_stats(user_id: int) -> dict:
         }
     return _invite_stats[user_id]
 
+def build_invite_main(user) -> tuple[str, InlineKeyboardMarkup]:
+    user_id = user.id
+    invite_link = generate_invite_link(user_id)
+    stats = get_invite_stats(user_id)
+
+    username = escape_html(user.username or "未设置")
+    full_name = escape_html(user.full_name or "")
+    safe_invite_link = escape_html(invite_link)
+
+    text = (
+        "🔗 <b>我的邀请链接</b>\n\n"
+        "👤 <b>用户信息</b>\n"
+        f"├ 用户名: {username}\n"
+        f"├ 用户ID: <code>{user_id}</code>\n"
+        f"└ 昵称: {full_name}\n\n"
+        "📊 <b>邀请统计</b>\n"
+        f"├ 累计邀请: {stats['total_invited']} 人\n"
+        f"├ 活跃用户: {stats['active_users']} 人\n"
+        f"├ 本月邀请: {stats['this_month']} 人\n"
+        f"└ 获得奖励: {stats['coins_earned']} 书币\n\n"
+        "🔗 <b>您的专属邀请链接</b>\n"
+        f"<code>{safe_invite_link}</code>\n\n"
+        "💡 <b>邀请奖励说明:</b>\n"
+        "• 每成功邀请1位好友，获得 10 书币\n"
+        "• 好友首次上传书籍，额外获得 5 书币\n"
+        "• 无上限，多邀多得！\n\n"
+        "📱 点击按钮复制链接或立即分享"
+    )
+
+    share_url = "https://t.me/share/url?url=" + quote(invite_link, safe="") + "&text=" + quote(
+        "快来加入搜书神器，海量小说免费下载！", safe=""
+    )
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📋 复制链接", url=share_url)],
+            [InlineKeyboardButton(text="📢 立即分享", switch_inline_query="")],
+            [
+                InlineKeyboardButton(text="📊 详细统计", callback_data="invite:stats"),
+                InlineKeyboardButton(text="❓ 奖励说明", callback_data="invite:help"),
+            ],
+        ]
+    )
+    return text, keyboard
+
 
 @invite_router.message(Command("my"))
 async def cmd_my(message: Message):
@@ -68,59 +114,8 @@ async def cmd_my(message: Message):
     2. 显示邀请统计
     3. 提供分享按钮
     """
-    user = message.from_user
-    user_id = user.id
-
-    # 生成邀请链接
-    invite_link = generate_invite_link(user_id)
-
-    # 获取邀请统计
-    stats = get_invite_stats(user_id)
-
-    # 构建消息文本
-    text = f"""
-🔗 <b>我的邀请链接</b>
-
-👤 <b>用户信息</b>
-├ 用户名: {user.username or '未设置'}
-├ 用户ID: <code>{user_id}</code>
-└ 昵称: {user.full_name}
-
-📊 <b>邀请统计</b>
-├ 累计邀请: {stats['total_invited']} 人
-├ 活跃用户: {stats['active_users']} 人
-├ 本月邀请: {stats['this_month']} 人
-└ 获得奖励: {stats['coins_earned']} 书币
-
-🔗 <b>您的专属邀请链接</b>
-<code>{invite_link}</code>
-
-💡 <b>邀请奖励说明:</b>
-• 每成功邀请1位好友，获得 10 书币
-• 好友首次上传书籍，额外获得 5 书币
-• 无上限，多邀多得！
-
-📱 点击按钮复制链接或立即分享
-"""
-
-    # 构建键盘
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(
-                text="📋 复制链接",
-                url=f"https://t.me/share/url?url={invite_link}&text=快来加入搜书神器，海量小说免费下载！"
-            ),
-        ],
-        [
-            InlineKeyboardButton(text="📢 立即分享", switch_inline_query=""),
-        ],
-        [
-            InlineKeyboardButton(text="📊 详细统计", callback_data="invite:stats"),
-            InlineKeyboardButton(text="❓ 奖励说明", callback_data="invite:help"),
-        ],
-    ])
-
-    await message.answer(text, reply_markup=keyboard)
+    text, keyboard = build_invite_main(message.from_user)
+    await message.answer(text, reply_markup=keyboard, disable_web_page_preview=True)
 
     logger.info(f"用户 {user_id} 查看了邀请链接")
 
@@ -189,9 +184,6 @@ async def on_invite_help(callback: CallbackQuery):
 @invite_router.callback_query(F.data == "invite:back")
 async def on_invite_back(callback: CallbackQuery):
     """返回邀请主页面"""
-    # 重新触发 /my 命令
-    from aiogram.types import Message
-
-    # 模拟消息对象调用命令
-    await cmd_my(callback.message)
+    text, keyboard = build_invite_main(callback.from_user)
+    await callback.message.edit_text(text, reply_markup=keyboard, disable_web_page_preview=True)
     await callback.answer()

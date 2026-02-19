@@ -13,6 +13,7 @@ from aiogram.filters import Command
 from app.core.logger import logger
 from app.core.database import get_session_factory
 from app.core.models import User, Favorite, Book, DownloadLog
+from app.core.text import escape_html
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -59,11 +60,12 @@ async def cmd_me(message: Message):
         await status.edit_text("❌ 当前服务繁忙，请稍后再试")
         return
 
+    safe_username = escape_html(tg_user.username or "未设置")
     text = f"""
 👤 <b>个人中心</b>
 
 📝 <b>基本信息</b>
-├ 用户名: <code>{tg_user.username or '未设置'}</code>
+├ 用户名: <code>{safe_username}</code>
 ├ 用户ID: <code>{tg_user.id}</code>
 └ 注册时间: {user.created_at.strftime('%Y-%m-%d') if user.created_at else '未知'}
 
@@ -120,10 +122,11 @@ async def cmd_coins(message: Message):
         await status.edit_text("❌ 当前服务繁忙，请稍后再试")
         return
 
+    safe_user_display = escape_html(tg_user.username or tg_user.full_name or "")
     text = f"""
 💰 <b>书币余额</b>
 
-用户: <code>{tg_user.username or tg_user.full_name}</code>
+用户: <code>{safe_user_display}</code>
 余额: <code>{user.coins} 🪙</code>
 
 📖 <b>书币用途:</b>
@@ -200,8 +203,8 @@ async def cmd_favorites(message: Message):
         book = fav.book
         if not book:
             continue
-        lines.append(f"{i}. <b>{book.title}</b>")
-        lines.append(f"   👤 {book.author} | 📅 {fav.created_at.strftime('%Y-%m-%d') if fav.created_at else '未知'}")
+        lines.append(f"{i}. <b>{escape_html(book.title)}</b>")
+        lines.append(f"   👤 {escape_html(book.author)} | 📅 {fav.created_at.strftime('%Y-%m-%d') if fav.created_at else '未知'}")
         lines.append("")
 
         current_row.append(
@@ -269,7 +272,7 @@ async def cmd_history(message: Message):
     current_row: list[InlineKeyboardButton] = []
     for i, log in enumerate(logs, 1):
         book = books_by_id.get(log.book_id)
-        title = book.title if book else f"书籍ID {log.book_id}"
+        title = escape_html(book.title) if book else escape_html(f"书籍ID {log.book_id}")
         lines.append(f"{i}. <b>{title}</b>")
         lines.append(f"   📅 {log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '未知'}")
         lines.append("")

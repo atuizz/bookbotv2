@@ -23,8 +23,10 @@ class SearchFilters:
     is_18plus: Optional[bool] = None       # 成人内容
     is_vip_only: Optional[bool] = None     # VIP专属
     min_rating: Optional[float] = None     # 最低评分
+    min_size: Optional[int] = None         # 最小文件大小
     max_size: Optional[int] = None         # 最大文件大小
     min_word_count: Optional[int] = None   # 最小字数
+    max_word_count: Optional[int] = None   # 最大字数
     tags: Optional[List[str]] = None       # 标签列表
 
     def to_meili_filter(self) -> List[str]:
@@ -43,11 +45,17 @@ class SearchFilters:
         if self.min_rating is not None:
             filters.append(f"rating_score >= {self.min_rating}")
 
+        if self.min_size is not None:
+            filters.append(f"size >= {self.min_size}")
+
         if self.max_size is not None:
             filters.append(f"size <= {self.max_size}")
 
         if self.min_word_count is not None:
             filters.append(f"word_count >= {self.min_word_count}")
+
+        if self.max_word_count is not None:
+            filters.append(f"word_count <= {self.max_word_count}")
 
         if self.tags:
             # 标签使用 OR 匹配 (至少匹配一个)
@@ -127,6 +135,8 @@ class SearchService:
                 "status",
                 "language",
                 "tags",
+                "size",
+                "word_count",
             ],
             "sortableAttributes": [
                 "created_at",

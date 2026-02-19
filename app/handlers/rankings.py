@@ -16,6 +16,7 @@ from aiogram.types import (
 )
 
 from app.core.logger import logger
+from app.core.text import escape_html
 from app.services.search import get_search_service
 
 rankings_router = Router(name="rankings")
@@ -78,7 +79,7 @@ async def show_hot_ranking(message, user_id: int):
     if response.hits:
         for i, book in enumerate(response.hits[:10], 1):
             emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-            text += f"{emoji} <b>{book.title}</b>\n"
+            text += f"{emoji} <b>{escape_html(book.title)}</b>\n"
             text += f"   ⬇️ {book.download_count or 0} 次下载"
             if book.rating_score:
                 text += f" | ⭐ {book.rating_score:.1f}"
@@ -119,7 +120,7 @@ async def show_new_ranking(message, user_id: int):
         from datetime import datetime
         for i, book in enumerate(response.hits[:10], 1):
             emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
-            text += f"{emoji} <b>{book.title}</b>\n"
+            text += f"{emoji} <b>{escape_html(book.title)}</b>\n"
             created = book.created_at
             if isinstance(created, int):
                 text += f"   📅 {datetime.fromtimestamp(created).strftime('%Y-%m-%d')}"
@@ -164,7 +165,7 @@ async def show_rating_ranking(message, user_id: int):
         for i, book in enumerate(response.hits[:10], 1):
             emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
             stars = "⭐" * int(book.rating_score or 0)
-            text += f"{emoji} <b>{book.title}</b>\n"
+            text += f"{emoji} <b>{escape_html(book.title)}</b>\n"
             text += f"   {stars} {book.rating_score:.1f}/10"
             if book.rating_count:
                 text += f" ({book.rating_count}人评分)"
