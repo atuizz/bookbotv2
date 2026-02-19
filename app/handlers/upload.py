@@ -19,8 +19,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.logger import logger
 from app.core.database import get_session_factory
-from app.core.models import Book, File, User, FileRef, BookStatus, FileFormat
+from app.core.models import Book, File, User, FileRef, BookStatus, FileFormat, Tag, BookTag
 from app.core.text import escape_html
+from app.services.metadata import extract_upload_metadata
 from app.services.search import get_search_service
 
 upload_router = Router(name="upload")
@@ -198,6 +199,7 @@ async def handle_document(message: Message):
         await message.bot.download(document, destination=buffer)
         file_bytes = buffer.getvalue()
         file_hash = calculate_sha256(file_bytes)
+        metadata = extract_upload_metadata(file_name=file_name, file_ext=file_ext, file_bytes=file_bytes)
 
         # 更新状态
         await status_msg.edit_text(
@@ -244,9 +246,12 @@ async def handle_document(message: Message):
                     size=file_size,
                     extension=file_ext,
                     format=fmt,
-                    word_count=0
+                    word_count=metadata.word_count or 0
                 )
                 session.add(db_file)
+            else:
+                if (db_file.word_count or 0) <= 0 and (metadata.word_count or 0) > 0:
+                    db_file.word_count = metadata.word_count
             
             # 4.3 创建文件引用
             # 检查是否已存在引用
@@ -306,22 +311,38 @@ async def handle_document(message: Message):
                 new_book = existing_book
             else:
                 reward_coins = calculate_upload_reward(file_size, file_ext)
-                book_title = file_name.rsplit('.', 1)[0]
                 new_book = Book(
-                    title=book_title,
-                    author="Unknown",
+                    title=metadata.title,
+                    author=metadata.author,
                     file_hash=file_hash,
                     uploader_id=user.id,
                     status=BookStatus.ACTIVE,
                     is_original=False,
                     is_18plus=False,
                     is_vip_only=False,
+                    description=metadata.description,
                     rating_score=0.0,
                     quality_score=0.0,
                     rating_count=0,
                     download_count=0,
                 )
                 session.add(new_book)
+                await session.flush()
+
+                if metadata.tags:
+                    existing_tags = (
+                        await session.execute(select(Tag).where(Tag.name.in_(metadata.tags)))
+                    ).scalars().all()
+                    tag_by_name = {t.name: t for t in existing_tags}
+                    for name in metadata.tags:
+                        tag = tag_by_name.get(name)
+                        if not tag:
+                            tag = Tag(name=name, usage_count=1)
+                            session.add(tag)
+                            await session.flush()
+                        else:
+                            tag.usage_count = int(tag.usage_count or 0) + 1
+                        session.add(BookTag(book_id=new_book.id, tag_id=tag.id, added_by=user.id))
 
                 db_user.coins += reward_coins
                 db_user.upload_count += 1
@@ -346,7 +367,7 @@ async def handle_document(message: Message):
                     "download_count": int(new_book.download_count or 0),
                     "is_18plus": bool(new_book.is_18plus),
                     "is_vip_only": bool(new_book.is_vip_only),
-                    "tags": [],
+                    "tags": list(metadata.tags or []),
                     "created_at": int(new_book.created_at.timestamp()) if new_book.created_at else 0,
                 },
                 wait=True,

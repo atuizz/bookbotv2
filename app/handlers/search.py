@@ -39,38 +39,49 @@ class SearchCache:
     """带过期时间的搜索缓存"""
 
     def __init__(self, ttl_seconds: int = 1800):
-        self._cache: Dict[int, Dict[str, Any]] = {}
+        self._cache: Dict[Tuple[int, int], Dict[str, Any]] = {}
         self._ttl = ttl_seconds
 
-    def get(self, user_id: int) -> Optional[Dict[str, Any]]:
+    def get(self, user_id: int, message_id: int) -> Optional[Dict[str, Any]]:
         """获取缓存，如果过期则返回 None"""
-        if user_id not in self._cache:
+        key = (user_id, message_id)
+        entry = self._cache.get(key)
+        if not entry:
             return None
-
-        entry = self._cache[user_id]
-        if datetime.now() - entry['_timestamp'] > timedelta(seconds=self._ttl):
-            # 已过期，删除
-            del self._cache[user_id]
+        if datetime.now() - entry["_timestamp"] > timedelta(seconds=self._ttl):
+            self._cache.pop(key, None)
             return None
-
         return entry
 
-    def set(self, user_id: int, data: Dict[str, Any]) -> None:
+    def set(self, user_id: int, message_id: int, data: Dict[str, Any]) -> None:
         """设置缓存"""
         data = data.copy()
-        data['_timestamp'] = datetime.now()
-        self._cache[user_id] = data
+        data["_timestamp"] = datetime.now()
+        self._cache[(user_id, message_id)] = data
 
-    def __setitem__(self, key: int, value: Dict[str, Any]) -> None:
+    def __setitem__(self, key: Tuple[int, int], value: Dict[str, Any]) -> None:
         """支持 [] 赋值操作"""
-        self.set(key, value)
+        user_id, message_id = key
+        self.set(user_id, message_id, value)
 
-    def clear(self, user_id: Optional[int] = None) -> None:
+    def clear(self, user_id: Optional[int] = None, message_id: Optional[int] = None) -> None:
         """清除缓存"""
-        if user_id is None:
+        if user_id is None and message_id is None:
             self._cache.clear()
-        else:
-            self._cache.pop(user_id, None)
+            return
+        if user_id is not None and message_id is not None:
+            self._cache.pop((user_id, message_id), None)
+            return
+        if user_id is not None:
+            for k in list(self._cache.keys()):
+                if k[0] == user_id:
+                    self._cache.pop(k, None)
+            return
+        if message_id is not None:
+            for k in list(self._cache.keys()):
+                if k[1] == message_id:
+                    self._cache.pop(k, None)
+            return
 
 
 # 全局搜索缓存实例
@@ -163,7 +174,7 @@ def build_search_result_text(
 
     # 结果列表
     bot_username = (bot_username or "").lstrip("@")
-    for idx, book in enumerate(hits, start=start_idx):
+    for idx, book in enumerate(hits, start=1):
         # 书名和Flag
         flag = ""
         if book.is_18plus:
@@ -175,7 +186,7 @@ def build_search_result_text(
         safe_title = escape_html(book.title)
         title = f"<a href=\"{escape_html(link)}\">{safe_title}</a>" if link else safe_title
         prefix = "❓ " if (book.rating_score <= 0 and book.quality_score <= 0) else ""
-        title_line = f"{idx:02d}. {prefix}{title}{flag}"
+        title_line = f"<code>{idx:02d}.</code> {prefix}{title}{flag}"
         lines.append(title_line)
 
         # 格式、大小、字数、评分
@@ -183,7 +194,7 @@ def build_search_result_text(
         size_str = format_size(book.size)
         word_str = format_word_count(book.word_count)
         rating_display = f"{book.rating_score:.2f}/{book.quality_score:.2f}"
-        detail_line = f"{emoji}·{book.format.upper()}·{size_str}·{word_str}字·{rating_display}"
+        detail_line = f"<code>{emoji}·{book.format.upper()}·{size_str}·{word_str}字·{rating_display}</code>"
         lines.append(detail_line)
 
     lines.append("")
@@ -233,17 +244,18 @@ def build_search_keyboard(
     keyboard: list[list[InlineKeyboardButton]] = []
 
     # 第1行：分页（选择页码）
-    page_row: list[InlineKeyboardButton] = []
-    if total_pages <= 1:
-        page_row.append(InlineKeyboardButton(text="1∨", callback_data="search:noop"))
-    else:
-        visible = list(range(1, min(total_pages, 6) + 1))
-        for p in visible:
-            text = f"{p}∨" if p == page else str(p)
-            page_row.append(InlineKeyboardButton(text=text, callback_data=f"search:page:{p}"))
-        if total_pages > 6:
-            page_row.append(InlineKeyboardButton(text=f"...{total_pages}", callback_data=f"search:page:{total_pages}"))
-    keyboard.append(page_row)
+    if total > 0:
+        page_row: list[InlineKeyboardButton] = []
+        if total_pages <= 1:
+            page_row.append(InlineKeyboardButton(text="1∨", callback_data="search:noop"))
+        else:
+            visible = list(range(1, min(total_pages, 6) + 1))
+            for p in visible:
+                text = f"{p}∨" if p == page else str(p)
+                page_row.append(InlineKeyboardButton(text=text, callback_data=f"search:page:{p}"))
+            if total_pages > 6:
+                page_row.append(InlineKeyboardButton(text=f"...{total_pages}", callback_data=f"search:page:{total_pages}"))
+        keyboard.append(page_row)
 
     menu = (filters.get("_menu") or "").strip()
 
@@ -431,14 +443,17 @@ def build_search_keyboard(
         ),
     ])
 
-    # 第4/5行：按序号下载（1-10）
-    d1: list[InlineKeyboardButton] = []
-    d2: list[InlineKeyboardButton] = []
-    for i in range(1, 11):
-        btn = InlineKeyboardButton(text=str(i), callback_data=f"search:dl:{i}")
-        (d1 if i <= 5 else d2).append(btn)
-    keyboard.append(d1)
-    keyboard.append(d2)
+    # 第4/5行：按序号下载（按当前页实际条数生成）
+    hits_len = len(response.hits)
+    if hits_len > 0:
+        row: list[InlineKeyboardButton] = []
+        for i in range(1, hits_len + 1):
+            row.append(InlineKeyboardButton(text=str(i), callback_data=f"search:dl:{i}"))
+            if len(row) == 5:
+                keyboard.append(row)
+                row = []
+        if row:
+            keyboard.append(row)
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -483,12 +498,13 @@ async def text_search(message: Message):
     """
     text = message.text.strip()
 
-    # 排除太短的文本（可能是误触）
-    if len(text) < 2:
-        return
-
     # 排除纯数字（可能是回复其他消息）
     if text.isdigit():
+        return
+
+    # 排除太短的文本（可能是误触）
+    if len(text) < 2:
+        await message.answer("⚠️ 搜索关键词至少需要2个字符")
         return
 
     # 执行搜索
@@ -557,34 +573,30 @@ async def perform_search(
             sort=sort,
         )
 
-        # 保存用户搜索状态到缓存
-        _search_cache.set(user_id, {
+        # 删除"搜索中"消息
+        await status_message.delete()
+
+        keyboard = build_search_keyboard(response, user_id, filters)
+        if response.total == 0:
+            result_message = await message.answer(
+                build_no_result_text(filters),
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
+        else:
+            result_text = build_search_result_text(response, get_settings().bot_username, filters)
+            result_message = await message.answer(
+                result_text,
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
+
+        _search_cache.set(user_id, result_message.message_id, {
             "query": query,
             "page": page,
             "filters": filters.copy(),
             "last_response": response,
         })
-
-        # 删除"搜索中"消息
-        await status_message.delete()
-
-        if response.total == 0:
-            # 无结果
-            await message.answer(build_no_result_text(filters))
-            return
-
-        # 构建结果文本
-        result_text = build_search_result_text(response, get_settings().bot_username, filters)
-
-        # 构建键盘
-        keyboard = build_search_keyboard(response, user_id, filters)
-
-        # 发送结果
-        await message.answer(
-            result_text,
-            reply_markup=keyboard,
-            disable_web_page_preview=True,
-        )
 
     except Exception as e:
         logger.error(f"搜索失败: {e}", exc_info=True)
@@ -614,13 +626,15 @@ async def on_search_callback(callback: CallbackQuery):
     action = parts[1]
 
     # 获取用户搜索状态
-    cache = _search_cache.get(user_id)
+    message_id = callback.message.message_id
+    cache = _search_cache.get(user_id, message_id)
     if not cache:
         await callback.answer("⚠️ 搜索会话已过期，请重新搜索", show_alert=True)
         return
 
     query = cache["query"]
     filters = cache["filters"]
+    prefix_text = cache.get("prefix_text") or ""
 
     try:
         if action == "page":
@@ -632,13 +646,14 @@ async def on_search_callback(callback: CallbackQuery):
                 user_id,
                 page=new_page,
                 filters=filters,
+                prefix_text=prefix_text,
             )
             await callback.answer()
 
         elif action == "filter":
             filter_type = parts[2] if len(parts) > 2 else ""
             option = parts[3] if len(parts) > 3 else None
-            await handle_filter_callback(callback, filter_type, option, query, filters)
+            await handle_filter_callback(callback, filter_type, option, query, filters, prefix_text)
 
         elif action == "sort":
             sort_key = parts[2] if len(parts) > 2 else ""
@@ -646,16 +661,17 @@ async def on_search_callback(callback: CallbackQuery):
                 await callback.answer("⚠️ 无效的排序", show_alert=True)
                 return
             filters["sort"] = sort_key
-            cache_data = _search_cache.get(user_id)
+            cache_data = _search_cache.get(user_id, message_id)
             if cache_data:
                 cache_data["filters"] = filters
-                _search_cache.set(user_id, cache_data)
+                _search_cache.set(user_id, message_id, cache_data)
             await perform_search_edit(
                 callback.message,
                 query,
                 user_id,
                 page=1,
                 filters=filters,
+                prefix_text=prefix_text,
             )
             await callback.answer()
 
@@ -689,6 +705,7 @@ async def handle_filter_callback(
     option: Optional[str],
     query: str,
     current_filters: Dict,
+    prefix_text: str = "",
 ):
     """处理筛选回调"""
     user_id = callback.from_user.id
@@ -697,12 +714,13 @@ async def handle_filter_callback(
     if option is None:
         current_menu = (current_filters.get(menu_key) or "").strip()
         current_filters[menu_key] = "" if current_menu == filter_type else filter_type
-        cache_data = _search_cache.get(user_id)
+        message_id = callback.message.message_id
+        cache_data = _search_cache.get(user_id, message_id)
         if not cache_data or not cache_data.get("last_response"):
             await callback.answer()
             return
         cache_data["filters"] = current_filters
-        _search_cache.set(user_id, cache_data)
+        _search_cache.set(user_id, message_id, cache_data)
         keyboard = build_search_keyboard(cache_data["last_response"], user_id, current_filters)
         await callback.message.edit_reply_markup(reply_markup=keyboard)
         await callback.answer()
@@ -791,10 +809,11 @@ async def handle_filter_callback(
     current_filters[menu_key] = ""
 
     # 更新缓存
-    cache_data = _search_cache.get(user_id)
+    message_id = callback.message.message_id
+    cache_data = _search_cache.get(user_id, message_id)
     if cache_data:
         cache_data["filters"] = current_filters
-        _search_cache.set(user_id, cache_data)
+        _search_cache.set(user_id, message_id, cache_data)
 
     # 重新搜索 (回到第1页)
     await perform_search_edit(
@@ -803,6 +822,7 @@ async def handle_filter_callback(
         user_id,
         page=1,
         filters=current_filters,
+        prefix_text=prefix_text,
     )
     await callback.answer()
 
@@ -813,6 +833,7 @@ async def perform_search_edit(
     user_id: int,
     page: int = 1,
     filters: Optional[Dict] = None,
+    prefix_text: str = "",
 ):
     """
     执行搜索并编辑消息 (用于回调更新)
@@ -857,23 +878,32 @@ async def perform_search_edit(
         )
 
         # 更新缓存
-        _search_cache.set(user_id, {
+        message_id = message.message_id
+        _search_cache.set(user_id, message_id, {
             "query": query,
             "page": page,
             "filters": filters.copy(),
             "last_response": response,
         })
 
+        keyboard = build_search_keyboard(response, user_id, filters)
         if response.total == 0:
-            await message.answer(build_no_result_text(filters))
+            text = build_no_result_text(filters)
+            if prefix_text:
+                text = f"{prefix_text}\n{text}"
+            await message.edit_text(
+                text,
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
             return
 
         # 构建结果文本
         result_text = build_search_result_text(response, get_settings().bot_username, filters)
+        if prefix_text:
+            result_text = f"{prefix_text}\n{result_text}"
 
         # 构建键盘
-        keyboard = build_search_keyboard(response, user_id, filters)
-
         # 编辑消息
         await message.edit_text(
             result_text,

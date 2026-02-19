@@ -107,7 +107,8 @@ class TestBuildSearchResultText:
     def test_result_contains_book_info(self, mock_response):
         """测试结果包含书籍信息"""
         text = build_search_result_text(mock_response)
-        assert "1. 测试书名" in text
+        assert "<code>01.</code>" in text
+        assert "测试书名" in text
         assert "📄" in text  # TXT格式Emoji
         assert "TXT" in text  # 格式大写
         assert "500KB" in text  # 大小
@@ -207,6 +208,30 @@ class TestBuildSearchKeyboard:
             for text in all_texts
         )
         assert has_filter, "键盘应该有筛选按钮"
+
+    def test_keyboard_download_buttons_match_hits(self, mock_response):
+        keyboard = build_search_keyboard(mock_response, user_id=123)
+        dl_buttons = [
+            btn
+            for row in keyboard.inline_keyboard
+            for btn in row
+            if (btn.callback_data or "").startswith("search:dl:")
+        ]
+        assert [b.text for b in dl_buttons] == ["1", "2", "3", "4", "5"]
+
+    def test_no_result_keyboard_has_no_download_buttons(self):
+        response = SearchResponse(
+            hits=[],
+            total=0,
+            page=1,
+            per_page=10,
+            total_pages=0,
+            query="测试",
+            processing_time_ms=1,
+        )
+        keyboard = build_search_keyboard(response, user_id=123, filters={})
+        digit_buttons = [btn for row in keyboard.inline_keyboard for btn in row if btn.text.isdigit()]
+        assert digit_buttons == []
 
     def test_keyboard_format_menu(self, mock_response):
         keyboard = build_search_keyboard(

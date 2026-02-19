@@ -117,7 +117,7 @@ async def cmd_my(message: Message):
     text, keyboard = build_invite_main(message.from_user)
     await message.answer(text, reply_markup=keyboard, disable_web_page_preview=True)
 
-    logger.info(f"用户 {user_id} 查看了邀请链接")
+    logger.info(f"用户 {message.from_user.id} 查看了邀请链接")
 
 
 @invite_router.callback_query(F.data == "invite:stats")

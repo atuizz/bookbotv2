@@ -13,6 +13,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from app.core.logger import logger
 from app.core.database import get_session_factory
 from app.core.models import User, Book, BookStatus
+from app.core.deeplink import decode_payload
 from sqlalchemy import select, func
 from app.handlers.book_detail import send_book_card
 
@@ -75,6 +76,16 @@ async def cmd_start(message: Message):
             book_id=book_id,
             from_user=message.from_user,
         )
+        return
+    if payload.startswith("au_"):
+        author = decode_payload(payload.replace("au_", "", 1))
+        author = (author or "").strip()
+        if len(author) < 1:
+            await message.answer("⚠️ 无效的链接参数")
+            return
+        from app.handlers.search import perform_search
+
+        await perform_search(message, author, user_id=message.from_user.id)
         return
 
     welcome_text = (

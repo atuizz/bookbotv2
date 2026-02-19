@@ -74,6 +74,7 @@ async def perform_tag_search(
     3. 结果排序: 按标签相关性排序
     """
     filters = filters or {}
+    prefix_text = "🏷️ <b>标签/主角搜索</b>"
 
     # 发送"搜索中"提示
     status_message = await message.answer(f"🔍 正在搜索标签/主角: <b>{escape_html(query)}</b>...")
@@ -107,44 +108,40 @@ async def perform_tag_search(
             sort=sort,
         )
 
-        # 保存用户搜索状态到缓存
-        _search_cache.set(user_id, {
-            "query": query,
-            "page": page,
-            "filters": filters.copy(),
-            "last_response": response,
-            "search_type": "tag",  # 标记为标签搜索
-        })
-
         # 删除"搜索中"消息
         await status_message.delete()
 
+        keyboard = build_search_keyboard(response, user_id, filters)
         if response.total == 0:
-            # 无结果
-            await message.answer(
-                f"😔 未找到与标签/主角 <b>{escape_html(query)}</b> 相关的书籍\n\n"
+            result_text = (
+                f"{prefix_text}\n"
+                f"😔 未找到与 <b>{escape_html(query)}</b> 相关的书籍\n\n"
                 f"💡 建议:\n"
                 f"• 检查关键词拼写\n"
                 f"• 尝试使用更通用的关键词\n"
                 f"• 使用 /s 命令搜索书名/作者"
             )
-            return
+            result_message = await message.answer(
+                result_text,
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
+        else:
+            result_text = build_search_result_text(response, get_settings().bot_username, filters)
+            result_text = f"{prefix_text}\n{result_text}"
+            result_message = await message.answer(
+                result_text,
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
 
-        # 构建结果文本
-        result_text = build_search_result_text(response, get_settings().bot_username, filters)
-
-        # 在结果前添加标签搜索标记
-        result_text = f"🏷️ <b>标签/主角搜索</b>\n{result_text}"
-
-        # 构建键盘
-        keyboard = build_search_keyboard(response, user_id, filters)
-
-        # 发送结果
-        await message.answer(
-            result_text,
-            reply_markup=keyboard,
-            disable_web_page_preview=True,
-        )
+        _search_cache.set(user_id, result_message.message_id, {
+            "query": query,
+            "page": page,
+            "filters": filters.copy(),
+            "last_response": response,
+            "prefix_text": prefix_text,
+        })
 
     except Exception as e:
         logger.error(f"标签搜索失败: {e}", exc_info=True)

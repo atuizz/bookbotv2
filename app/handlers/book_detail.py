@@ -26,6 +26,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from app.core.logger import logger
 from app.core.database import get_session_factory
+from app.core.deeplink import encode_payload
 from app.core.text import escape_html
 from app.core.models import Book, File, FileRef, BookTag, Tag, User, Favorite, DownloadLog
 from sqlalchemy import select, update, func
@@ -134,7 +135,7 @@ async def get_book_from_db(book_id: int) -> Optional[Book]:
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
-def build_book_caption(book: Book) -> str:
+def build_book_caption(book: Book, *, bot_username: str = "") -> str:
     tags = [bt.tag.name for bt in (book.book_tags or []) if bt.tag and bt.tag.name]
     tags_display = " ".join([f"#{escape_html(t)}" for t in tags[:30]]) if tags else "暂无标签"
 
@@ -171,14 +172,24 @@ def build_book_caption(book: Book) -> str:
     safe_author = escape_html(book.author or "Unknown")
     safe_description = escape_html(description)
     language_display = format_language(language)
+    bot_username = (bot_username or "").lstrip("@")
+    title_display = safe_title
+    author_display = safe_author
+    if bot_username:
+        title_link = f"https://t.me/{bot_username}?start=book_{book.id}"
+        title_display = f"<a href=\"{escape_html(title_link)}\">{safe_title}</a>"
+        author_token = encode_payload(book.author or "")
+        if author_token:
+            author_link = f"https://t.me/{bot_username}?start=au_{author_token}"
+            author_display = f"<a href=\"{escape_html(author_link)}\">{safe_author}</a>"
     lines = [
-        f"书名: {safe_title}",
-        f"作者: {safe_author}",
+        f"书名: {title_display}",
+        f"作者: {author_display}",
         f"文库: {language_display} | {fmt_display} | {file_size} | {format_word_count(word_count)}字 | {book.rating_count}R | {book.comment_count}笔",
         "",
         f"统计: {book.view_count}热度 | {book.download_count}下载 | {book.like_count}点赞 | {book.favorite_count}收藏",
-        f"评分: {book.rating_score:.2f}分({book.rating_count}人)",
-        f"质量: {book.quality_score:.2f}分({book.rating_count}人)",
+        f"评分: {float(book.rating_score or 0.0):.2f}分({int(book.rating_count or 0)}人)",
+        f"质量: {float(book.quality_score or 0.0):.2f}分({int(book.rating_count or 0)}人)",
         "",
         f"标签: {tags_display}",
         "",
@@ -223,7 +234,7 @@ async def send_book_card(
         await bot.send_message(chat_id, "❌ 文件暂不可用")
         return
 
-    caption = build_book_caption(book)
+    caption = build_book_caption(book, bot_username=bot.username or "")
 
     is_admin = False
     is_fav = False
@@ -400,7 +411,6 @@ async def handle_download(callback: CallbackQuery, book_id: int):
 
 async def handle_favorite(callback: CallbackQuery, book_id: int):
     """处理收藏请求"""
-    await callback.answer("⏳ 处理中...")
     session_factory = get_session_factory()
     async with session_factory() as session:
         stmt = select(User).where(User.id == callback.from_user.id)
@@ -465,6 +475,12 @@ async def handle_favorite(callback: CallbackQuery, book_id: int):
             await session.commit()
         except IntegrityError:
             await session.rollback()
+            try:
+                await callback.message.edit_reply_markup(
+                    reply_markup=build_user_book_keyboard(book_id=book_id, is_fav=True)
+                )
+            except Exception:
+                pass
             await callback.answer("已添加到我喜欢的书籍")
             return
 
@@ -492,9 +508,12 @@ async def show_booklist_menu(callback: CallbackQuery, book_id: int) -> None:
         count = int(fav_count or 0)
         is_selected = fav is not None
 
-    await callback.message.edit_reply_markup(
-        reply_markup=build_booklist_keyboard(book_id=book_id, count=count, selected=is_selected)
-    )
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=build_booklist_keyboard(book_id=book_id, count=count, selected=is_selected)
+        )
+    except TelegramBadRequest:
+        pass
     await callback.answer()
 
 
@@ -507,41 +526,69 @@ async def hide_booklist_menu(callback: CallbackQuery, book_id: int) -> None:
                 Favorite.book_id == book_id,
             )
         )
-    await callback.message.edit_reply_markup(
-        reply_markup=build_user_book_keyboard(book_id=book_id, is_fav=fav is not None)
-    )
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=build_user_book_keyboard(book_id=book_id, is_fav=fav is not None)
+        )
+    except TelegramBadRequest:
+        pass
     await callback.answer()
 
 
 async def handle_booklist_select(callback: CallbackQuery, book_id: int) -> None:
     session_factory = get_session_factory()
     async with session_factory() as session:
+        user = await session.scalar(select(User).where(User.id == callback.from_user.id))
+        if not user:
+            user = User(
+                id=callback.from_user.id,
+                username=callback.from_user.username,
+                first_name=callback.from_user.first_name,
+                last_name=callback.from_user.last_name,
+                coins=0,
+                upload_count=0,
+                download_count=0,
+                search_count=0,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+        if user.is_banned:
+            await callback.answer("❌ 账号已被限制使用", show_alert=True)
+            return
+
         fav = await session.scalar(
             select(Favorite).where(
                 Favorite.user_id == callback.from_user.id,
                 Favorite.book_id == book_id,
             )
         )
-        if fav is None:
-            try:
-                session.add(Favorite(user_id=callback.from_user.id, book_id=book_id))
-                await session.execute(
-                    update(Book)
-                    .where(Book.id == book_id)
-                    .values(favorite_count=Book.favorite_count + 1)
-                )
-                await session.commit()
-            except IntegrityError:
-                await session.rollback()
+        if fav is not None:
+            await callback.answer("已添加到我喜欢的书籍")
+            return
+
+        try:
+            session.add(Favorite(user_id=callback.from_user.id, book_id=book_id))
+            await session.execute(
+                update(Book)
+                .where(Book.id == book_id)
+                .values(favorite_count=Book.favorite_count + 1)
+            )
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
 
         fav_count = await session.scalar(
             select(func.count()).select_from(Favorite).where(Favorite.user_id == callback.from_user.id)
         )
         count = int(fav_count or 0)
 
-    await callback.message.edit_reply_markup(
-        reply_markup=build_booklist_keyboard(book_id=book_id, count=count, selected=True)
-    )
+    try:
+        await callback.message.edit_reply_markup(
+            reply_markup=build_booklist_keyboard(book_id=book_id, count=count, selected=True)
+        )
+    except TelegramBadRequest:
+        pass
     await callback.answer("已添加到我喜欢的书籍")
 
 
