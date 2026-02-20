@@ -10,6 +10,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
+from app.core.config import get_settings
 from app.core.logger import logger
 from app.core.database import get_session_factory
 from app.core.models import User, Book, BookStatus
@@ -192,7 +193,7 @@ async def cmd_review(message: Message):
 async def on_help_callback(callback: CallbackQuery):
     action = callback.data.replace("help:", "")
     if action == "invite":
-        username = callback.bot.username or ""
+        username = (get_settings().bot_username or "").lstrip("@")
         link = f"https://t.me/{username}?start=invite_{callback.from_user.id}" if username else ""
         await callback.message.answer(f"邀请链接：{link}" if link else "⚠️ 暂无法生成邀请链接")
         await callback.answer()

@@ -24,6 +24,7 @@ from aiogram.types import (
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 
+from app.core.config import get_settings
 from app.core.logger import logger
 from app.core.database import get_session_factory
 from app.core.deeplink import encode_payload
@@ -234,7 +235,7 @@ async def send_book_card(
         await bot.send_message(chat_id, "❌ 文件暂不可用")
         return
 
-    caption = build_book_caption(book, bot_username=bot.username or "")
+    caption = build_book_caption(book, bot_username=get_settings().bot_username)
 
     is_admin = False
     is_fav = False
