@@ -200,6 +200,14 @@ async def handle_document(message: Message):
         file_bytes = buffer.getvalue()
         file_hash = calculate_sha256(file_bytes)
         metadata = extract_upload_metadata(file_name=file_name, file_ext=file_ext, file_bytes=file_bytes)
+        try:
+            tags_preview = ",".join((metadata.tags or [])[:10])
+            logger.info(
+                f"上传元数据解析: ext={file_ext} title={metadata.title} author={metadata.author} "
+                f"tags={len(metadata.tags or [])} [{tags_preview}]"
+            )
+        except Exception:
+            pass
 
         # 更新状态
         await status_msg.edit_text(

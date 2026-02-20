@@ -44,3 +44,17 @@ def test_extract_upload_metadata_supports_character_and_keywords_fields():
     assert "陈伶" in meta.tags
     assert "诡异" in meta.tags
     assert "推理" in meta.tags
+
+
+def test_extract_upload_metadata_supports_bracketed_and_bulleted_fields():
+    raw = (
+        "【书名】：武道无穷，吾身无拘\n"
+        "- 【作者】：猴子\n"
+        "• 标签：玄幻、热血\n"
+        "正文...\n"
+    ).encode("utf-8")
+    meta = extract_upload_metadata(file_name="武道无穷.txt", file_ext="txt", file_bytes=raw)
+    assert meta.title == "武道无穷，吾身无拘"
+    assert meta.author == "猴子"
+    assert "玄幻" in meta.tags
+    assert "热血" in meta.tags

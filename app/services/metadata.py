@@ -15,8 +15,12 @@ class UploadMetadata:
 _RE_SEP = re.compile(r"[|/、,，;；\t ]+")
 _RE_TITLE_AUTHOR_1 = re.compile(r"^(?P<title>.+?)\s*[-_—–]\s*(?P<author>.+?)$")
 _RE_TITLE_AUTHOR_2 = re.compile(r"^《(?P<title>.+?)》\s*(?P<author>.+?)$")
+_RE_FIELD_KEYS = (
+    "书名|作者|标签|分类|主角|人物|角色|关键字|关键词|题材|类型|简介|"
+    "title|author|tag|tags|category|description"
+)
 _RE_FIELD = re.compile(
-    r"^(?P<k>书名|作者|标签|分类|主角|人物|角色|关键字|关键词|题材|类型|简介|title|author|tag|tags|category|description)[:：]\s*(?P<v>.+?)\s*$",
+    rf"^\s*(?:[-*•]+)?\s*(?:【|\[)?(?P<k>{_RE_FIELD_KEYS})(?:】|\])?\s*[:：]\s*(?P<v>.*?)\s*$",
     flags=re.IGNORECASE,
 )
 
@@ -88,7 +92,8 @@ def _count_word_like(text: str) -> int:
 
 
 def _extract_txt_front_matter(text: str) -> dict:
-    lines = [ln.strip() for ln in (text or "").splitlines()[:80] if ln.strip()]
+    lines = [ln.strip() for ln in (text or "").splitlines()[:1200] if ln.strip()]
+    lines = lines[:400]
     out: dict = {"tags": []}
     for ln in lines:
         m = _RE_FIELD.match(ln)
