@@ -15,7 +15,10 @@ class UploadMetadata:
 _RE_SEP = re.compile(r"[|/、,，;；\t ]+")
 _RE_TITLE_AUTHOR_1 = re.compile(r"^(?P<title>.+?)\s*[-_—–]\s*(?P<author>.+?)$")
 _RE_TITLE_AUTHOR_2 = re.compile(r"^《(?P<title>.+?)》\s*(?P<author>.+?)$")
-_RE_FIELD = re.compile(r"^(?P<k>书名|作者|标签|分类|简介)[:：]\s*(?P<v>.+?)\s*$")
+_RE_FIELD = re.compile(
+    r"^(?P<k>书名|作者|标签|分类|主角|人物|角色|关键字|关键词|题材|类型|简介|title|author|tag|tags|category|description)[:：]\s*(?P<v>.+?)\s*$",
+    flags=re.IGNORECASE,
+)
 
 
 def _clean_value(v: str) -> str:
@@ -86,21 +89,22 @@ def _count_word_like(text: str) -> int:
 
 def _extract_txt_front_matter(text: str) -> dict:
     lines = [ln.strip() for ln in (text or "").splitlines()[:80] if ln.strip()]
-    out: dict = {}
+    out: dict = {"tags": []}
     for ln in lines:
         m = _RE_FIELD.match(ln)
         if not m:
             continue
-        k = m.group("k")
+        k = (m.group("k") or "").strip().lower()
         v = _clean_value(m.group("v"))
-        if k == "书名" and "title" not in out:
+        if k in {"书名", "title"} and "title" not in out:
             out["title"] = _clean_title(v)
-        elif k == "作者" and "author" not in out:
+        elif k in {"作者", "author"} and "author" not in out:
             out["author"] = _clean_author(v)
-        elif k in {"标签", "分类"} and "tags" not in out:
-            out["tags"] = _split_tags(v)
-        elif k == "简介" and "description" not in out:
+        elif k in {"标签", "分类", "主角", "人物", "角色", "关键字", "关键词", "题材", "类型", "tag", "tags", "category"}:
+            out["tags"].extend(_split_tags(v))
+        elif k in {"简介", "description"} and "description" not in out:
             out["description"] = v[:800]
+    out["tags"] = list(dict.fromkeys([t for t in out.get("tags", []) if t]))[:30]
     return out
 
 
@@ -112,7 +116,7 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
 
     if file_ext.lower() == "txt" and file_bytes:
         text = None
-        for enc in ("utf-8-sig", "utf-8", "gb18030", "gbk"):
+        for enc in ("utf-8-sig", "utf-8", "utf-16", "utf-16-le", "utf-16-be", "gb18030", "gbk"):
             try:
                 text = file_bytes.decode(enc)
                 break
@@ -139,4 +143,3 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
         word_count=int(word_count or 0),
         description=description,
     )
-

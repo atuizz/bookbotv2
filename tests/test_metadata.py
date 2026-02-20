@@ -28,3 +28,19 @@ def test_extract_upload_metadata_txt_front_matter():
     assert meta.word_count > 0
     assert meta.description == "这是简介"
 
+
+def test_extract_upload_metadata_supports_character_and_keywords_fields():
+    raw = (
+        "书名: 我不是戏神\n"
+        "作者: 二六直蚁\n"
+        "主角: 陈伶\n"
+        "关键词: 诡异, 推理\n"
+        "\n"
+        "正文...\n"
+    ).encode("utf-8")
+    meta = extract_upload_metadata(file_name="我不是戏神.txt", file_ext="txt", file_bytes=raw)
+    assert meta.title == "我不是戏神"
+    assert meta.author == "二六直蚁"
+    assert "陈伶" in meta.tags
+    assert "诡异" in meta.tags
+    assert "推理" in meta.tags

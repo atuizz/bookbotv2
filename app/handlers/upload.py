@@ -329,23 +329,38 @@ async def handle_document(message: Message):
                 session.add(new_book)
                 await session.flush()
 
-                if metadata.tags:
-                    existing_tags = (
-                        await session.execute(select(Tag).where(Tag.name.in_(metadata.tags)))
-                    ).scalars().all()
-                    tag_by_name = {t.name: t for t in existing_tags}
-                    for name in metadata.tags:
-                        tag = tag_by_name.get(name)
-                        if not tag:
-                            tag = Tag(name=name, usage_count=1)
-                            session.add(tag)
-                            await session.flush()
-                        else:
-                            tag.usage_count = int(tag.usage_count or 0) + 1
-                        session.add(BookTag(book_id=new_book.id, tag_id=tag.id, added_by=user.id))
-
                 db_user.coins += reward_coins
                 db_user.upload_count += 1
+
+            if metadata.tags:
+                existing_linked_names = set(
+                    (
+                        await session.execute(
+                            select(Tag.name)
+                            .select_from(Tag)
+                            .join(BookTag, Tag.id == BookTag.tag_id)
+                            .where(
+                                BookTag.book_id == new_book.id,
+                                Tag.name.in_(metadata.tags),
+                            )
+                        )
+                    ).scalars().all()
+                )
+                existing_tags = (
+                    await session.execute(select(Tag).where(Tag.name.in_(metadata.tags)))
+                ).scalars().all()
+                tag_by_name = {t.name: t for t in existing_tags}
+                for name in metadata.tags:
+                    tag = tag_by_name.get(name)
+                    if not tag:
+                        tag = Tag(name=name, usage_count=0)
+                        session.add(tag)
+                        await session.flush()
+                        tag_by_name[name] = tag
+                    if name in existing_linked_names:
+                        continue
+                    tag.usage_count = int(tag.usage_count or 0) + 1
+                    session.add(BookTag(book_id=new_book.id, tag_id=tag.id, added_by=user.id))
             
             # 提交事务
             await session.commit()
