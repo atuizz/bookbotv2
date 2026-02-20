@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from app.services.auto_tags import generate_tags
 
 @dataclass(frozen=True)
 class UploadMetadata:
@@ -118,6 +119,7 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
     tags: list[str] = []
     description: Optional[str] = None
     word_count = 0
+    auto_text = ""
 
     if file_ext.lower() == "txt" and file_bytes:
         text = None
@@ -129,6 +131,7 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
                 continue
         if text is None:
             text = file_bytes.decode("latin1", errors="replace")
+        auto_text = text[:200_000]
         fm = _extract_txt_front_matter(text)
         title = fm.get("title") or title
         author = fm.get("author") or author
@@ -138,6 +141,8 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
 
     title = _clean_title(title)
     author = _clean_author(author)
+    if not tags and file_ext.lower() == "txt" and auto_text:
+        tags = generate_tags(title=title, text=auto_text, limit=10)
     tags = [t for t in (_normalize_tag(x) for x in tags) if t]
     tags = list(dict.fromkeys(tags))[:30]
 

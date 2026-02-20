@@ -58,3 +58,15 @@ def test_extract_upload_metadata_supports_bracketed_and_bulleted_fields():
     assert meta.author == "猴子"
     assert "玄幻" in meta.tags
     assert "热血" in meta.tags
+
+
+def test_extract_upload_metadata_generates_tags_when_missing():
+    raw = (
+        "第一章 觉醒\n"
+        "他踏上修仙之路，金丹元婴，飞升成仙。\n"
+        "江湖门派与武林纷争不断。\n"
+        "悬疑案件层出不穷，侦探推理抽丝剥茧。\n"
+    ).encode("utf-8")
+    meta = extract_upload_metadata(file_name="无标签示例.txt", file_ext="txt", file_bytes=raw)
+    assert meta.tags
+    assert any(t in meta.tags for t in ["仙侠", "武侠", "悬疑"])
