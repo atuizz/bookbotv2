@@ -76,3 +76,18 @@ def test_extract_upload_metadata_generates_tags_from_tail_segments():
     raw = ("前文铺垫\n" * 50000 + "末世来临，丧尸围城，废土求生。\n").encode("utf-8")
     meta = extract_upload_metadata(file_name="尾部命中.txt", file_ext="txt", file_bytes=raw)
     assert "末日" in meta.tags
+
+
+def test_extract_upload_metadata_prefers_names_and_avoids_genre_overtrigger():
+    raw = (
+        ("无关内容\n" * 30000)
+        + ("孟晓涵 看着 李墨。\n" * 30)
+        + ("无关内容\n" * 30000)
+        + ("孟晓涵 说道：苏丽 你别走。\n" * 30)
+        + ("无关内容\n" * 30000)
+        + "将军 只出现一次。\n"
+    ).encode("utf-8")
+    meta = extract_upload_metadata(file_name="人名测试.txt", file_ext="txt", file_bytes=raw)
+    assert "孟晓涵" in meta.tags
+    assert any(t in meta.tags for t in ["李墨", "苏丽"])
+    assert "军事" not in meta.tags

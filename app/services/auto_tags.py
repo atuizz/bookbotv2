@@ -105,20 +105,30 @@ _STOPWORDS_CJK = {
 
 
 _GENRE_RULES: list[tuple[str, tuple[str, ...]]] = [
-    ("玄幻", ("玄幻", "异界", "斗气", "武魂", "魂环", "神域")),
-    ("奇幻", ("奇幻", "魔法", "法师", "巫师", "龙族", "精灵")),
-    ("仙侠", ("仙侠", "修仙", "修真", "金丹", "元婴", "飞升", "渡劫")),
-    ("武侠", ("武侠", "江湖", "门派", "掌门", "剑客", "武林")),
-    ("都市", ("都市", "商业", "职场", "总裁", "白领", "豪门")),
-    ("言情", ("言情", "甜宠", "虐恋", "先婚后爱", "追妻", "恋爱")),
-    ("悬疑", ("悬疑", "推理", "案件", "凶手", "密室", "侦探")),
-    ("科幻", ("科幻", "星际", "机甲", "外星", "穿越星", "宇宙")),
-    ("末日", ("末日", "丧尸", "废土", "灾变", "求生")),
-    ("历史", ("历史", "朝堂", "皇帝", "王朝", "权谋", "宰相")),
-    ("军事", ("军事", "战争", "战场", "军团", "将军")),
-    ("游戏", ("游戏", "网游", "副本", "玩家", "升级", "装备")),
-    ("灵异", ("灵异", "鬼怪", "诡异", "阴阳", "驱魔", "道士")),
-    ("二次元", ("二次元", "同人", "轻小说", "动漫", "宅")),
+    ("玄幻", ("玄幻", "异界", "斗气", "武魂", "魂环", "神域", "圣域", "神兽")),
+    ("奇幻", ("奇幻", "魔法", "法师", "巫师", "龙族", "精灵", "魔王", "魔兽")),
+    ("仙侠", ("仙侠", "修仙", "修真", "金丹", "元婴", "飞升", "渡劫", "灵根", "丹药")),
+    ("武侠", ("武侠", "江湖", "门派", "掌门", "剑客", "武林", "内力", "轻功")),
+    ("都市", ("都市", "商业", "职场", "总裁", "白领", "豪门", "地产", "公司")),
+    ("言情", ("言情", "甜宠", "虐恋", "先婚后爱", "追妻", "恋爱", "相亲", "告白")),
+    ("悬疑", ("悬疑", "推理", "案件", "凶手", "密室", "侦探", "线索", "尸体")),
+    ("科幻", ("科幻", "星际", "机甲", "外星", "宇宙", "飞船", "虫族", "量子")),
+    ("末日", ("末日", "丧尸", "废土", "灾变", "求生", "围城", "避难所")),
+    ("历史", ("历史", "朝堂", "皇帝", "王朝", "权谋", "宰相", "科举", "边关")),
+    ("军事", ("军事", "战争", "战场", "军团", "将军", "炮火", "阵地", "营地")),
+    ("游戏", ("游戏", "网游", "副本", "玩家", "升级", "装备", "技能", "公会")),
+    ("灵异", ("灵异", "鬼怪", "诡异", "阴阳", "驱魔", "道士", "冥界", "厉鬼")),
+    ("二次元", ("二次元", "同人", "轻小说", "动漫", "宅", "cos", "社团")),
+]
+
+
+_ADULT_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("后宫", ("后宫", "全收", "全推", "开后宫", "收后宫")),
+    ("校花", ("校花", "班花", "女神", "学姐", "学妹", "女老师")),
+    ("人妻", ("人妻", "少妇", "熟妇", "寡妇")),
+    ("淫荡", ("淫荡", "放荡", "骚", "骚气", "浪")),
+    ("肉欲", ("肉棒", "阴茎", "龟头", "阴蒂", "乳房", "乳头", "内裤", "胸罩", "屁股")),
+    ("高潮", ("高潮", "射精", "插入", "抽插", "内射", "深喉", "舔", "口交")),
 ]
 
 
@@ -137,6 +147,32 @@ def _tokenize_en(text: str) -> list[str]:
     return [w.lower() for w in _RE_EN.findall(text or "")]
 
 
+def sample_segments(*, text: str, segment_len: int, segments: int = 5) -> list[str]:
+    text = (text or "")
+    if segment_len <= 0 or not text:
+        return []
+    n = len(text)
+    if n <= segment_len:
+        return [text]
+
+    positions: list[int] = []
+    if segments <= 1:
+        positions = [0]
+    else:
+        for i in range(segments):
+            pos = int((n - segment_len) * (i / (segments - 1)))
+            positions.append(max(0, min(n - segment_len, pos)))
+
+    out: list[str] = []
+    seen: set[int] = set()
+    for pos in positions:
+        if pos in seen:
+            continue
+        seen.add(pos)
+        out.append(text[pos : pos + segment_len])
+    return out
+
+
 def sample_text(*, title: str, text: str, budget: int = 200_000, segments: int = 5) -> str:
     title = (title or "").strip()
     text = (text or "")
@@ -145,70 +181,155 @@ def sample_text(*, title: str, text: str, budget: int = 200_000, segments: int =
     if not text:
         return title
 
-    seg = max(10_000, budget // max(1, segments))
-    n = len(text)
-    if n <= budget:
-        return (title + "\n" + text)[:budget]
+    overhead = (len(title) + 1) if title else 0
+    available = max(0, budget - overhead)
+    if len(text) <= available:
+        return (title + "\n" + text) if title else text
 
-    positions: list[int] = []
-    if segments <= 1:
-        positions = [0]
-    else:
-        for i in range(segments):
-            pos = int((n - seg) * (i / (segments - 1)))
-            positions.append(max(0, min(n - seg, pos)))
+    seg_len = max(10_000, available // max(1, segments))
+    segs = sample_segments(text=text, segment_len=seg_len, segments=segments)
+    if title:
+        return title + "\n" + "\n".join(segs)
+    return "\n".join(segs)
 
-    parts: list[str] = [title] if title else []
-    seen: set[int] = set()
-    for pos in positions:
-        if pos in seen:
-            continue
-        seen.add(pos)
-        parts.append(text[pos : pos + seg])
 
-    out = "\n".join(parts)
-    return out[:budget]
+def _keyword_hits(text: str, keys: tuple[str, ...]) -> tuple[int, int]:
+    distinct = 0
+    total = 0
+    for k in keys:
+        c = (text or "").count(k)
+        if c > 0:
+            distinct += 1
+            total += c
+    return distinct, total
+
+
+def _is_noise_token(t: str) -> bool:
+    if not t:
+        return True
+    if any(ch.isdigit() for ch in t):
+        return True
+    if len(set(t)) == 1:
+        return True
+    if t in _STOPWORDS_CJK:
+        return True
+    if t.startswith("第") and t.endswith("章"):
+        return True
+    if t.startswith("第") and t.endswith("节"):
+        return True
+    return False
 
 
 def generate_tags(*, title: str, text: str, limit: int = 10) -> list[str]:
     title = (title or "").strip()
     text = (text or "")
     src = sample_text(title=title, text=text, budget=200_000, segments=5)
-
-    tags: list[str] = []
+    overhead = (len(title) + 1) if title else 0
+    available = max(0, 200_000 - overhead)
+    seg_len = max(10_000, available // 5) if available else 10_000
+    segments = sample_segments(text=text, segment_len=seg_len, segments=5)
     low_src = src.lower()
-    for tag, keys in _GENRE_RULES:
-        if any(k.lower() in low_src for k in keys):
-            tags.append(tag)
 
-    cjk_tokens = _tokenize_cjk(src)
-    cjk_tokens = [
-        t for t in cjk_tokens
-        if t not in _STOPWORDS_CJK and not t.startswith("第") and not t.endswith("章")
-    ]
+    genre_scored: list[tuple[int, str]] = []
+    for tag, keys in _GENRE_RULES:
+        distinct, total = _keyword_hits(src, keys)
+        if distinct >= 2 or total >= 3:
+            score = distinct * 3 + min(total, 10)
+            genre_scored.append((score, tag))
+    genre_scored.sort(reverse=True)
+    genre_tags = [t for _, t in genre_scored[:3]]
+
+    adult_scored: list[tuple[int, str]] = []
+    for tag, keys in _ADULT_RULES:
+        distinct, total = _keyword_hits(src, keys)
+        if distinct >= 1 and total >= 2:
+            score = distinct * 4 + min(total, 10)
+            adult_scored.append((score, tag))
+    adult_scored.sort(reverse=True)
+    adult_tags = [t for _, t in adult_scored[:3]]
+
+    seg_token_sets: list[set[str]] = []
+    seg_tokens_all: list[str] = []
+    for seg in segments if segments else [src]:
+        toks = [_normalize_tag(x) for x in _tokenize_cjk(seg)]
+        toks = [t for t in toks if not _is_noise_token(t)]
+        seg_token_sets.append(set(toks))
+        seg_tokens_all.extend(toks)
+
+    seg_counter = Counter(seg_tokens_all)
+    seg_presence: dict[str, int] = {}
+    for s in seg_token_sets:
+        for t in s:
+            seg_presence[t] = seg_presence.get(t, 0) + 1
+
+    buckets = 6
+    name_counter: Counter[str] = Counter()
+    name_mask: dict[str, int] = {}
+    n = len(text) or 1
+    for m in _RE_CJK.finditer(text):
+        t = _normalize_tag(m.group(0))
+        if len(t) not in (2, 3):
+            continue
+        if _is_noise_token(t):
+            continue
+        if title and t in title:
+            continue
+        name_counter[t] += 1
+        b = int(m.start() / n * buckets)
+        if b >= buckets:
+            b = buckets - 1
+        name_mask[t] = name_mask.get(t, 0) | (1 << b)
+
+    name_candidates: list[tuple[int, str]] = []
+    for t, c in name_counter.items():
+        mask = name_mask.get(t, 0)
+        bc = mask.bit_count() if hasattr(int, "bit_count") else bin(mask).count("1")
+        if bc >= 2 and c >= 6:
+            name_candidates.append((bc * 100000 + c, t))
+    name_candidates.sort(reverse=True)
+    name_tags = [t for _, t in name_candidates[:4]]
+
+    keyword_candidates: list[tuple[int, str]] = []
+    for t, c in seg_counter.items():
+        if len(t) < 2 or len(t) > 6:
+            continue
+        if t in genre_tags or t in adult_tags or t in name_tags:
+            continue
+        if title and t in title:
+            continue
+        sp = seg_presence.get(t, 0)
+        if sp <= 0:
+            continue
+        if c < 5 and sp < 2:
+            continue
+        score = sp * 1000 + c
+        keyword_candidates.append((score, t))
+    keyword_candidates.sort(reverse=True)
+
     en_tokens = _tokenize_en(src)
     en_tokens = [t for t in en_tokens if t not in {"http", "https", "www"}]
+    en_counter = Counter(en_tokens)
 
-    counter = Counter(cjk_tokens)
-    for t, _ in counter.most_common(80):
-        nt = _normalize_tag(t)
-        if not nt or nt in tags:
-            continue
-        if title and nt in title:
-            continue
-        tags.append(nt)
+    tags: list[str] = []
+    tags.extend(adult_tags)
+    tags.extend(genre_tags)
+    tags.extend(name_tags)
+
+    for _, t in keyword_candidates:
         if len(tags) >= limit:
             break
+        if t in tags:
+            continue
+        tags.append(t)
 
-    if len(tags) < limit and en_tokens:
-        ec = Counter(en_tokens)
-        for t, _ in ec.most_common(40):
+    if len(tags) < limit and en_counter:
+        for t, _ in en_counter.most_common(40):
+            if len(tags) >= limit:
+                break
             nt = _normalize_tag(t)
             if not nt or nt in tags:
                 continue
             tags.append(nt)
-            if len(tags) >= limit:
-                break
 
     tags = [t for t in (_normalize_tag(x) for x in tags) if t]
     tags = list(dict.fromkeys(tags))[:limit]
