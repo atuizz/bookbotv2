@@ -142,7 +142,7 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
     title = _clean_title(title)
     author = _clean_author(author)
     if not tags and file_ext.lower() == "txt" and auto_text:
-        tags = generate_tags(title=title, text=auto_text, limit=10)
+        tags = generate_tags(title=title, text=auto_text, limit=25)
     tags = [t for t in (_normalize_tag(x) for x in tags) if t]
     tags = list(dict.fromkeys(tags))[:30]
 

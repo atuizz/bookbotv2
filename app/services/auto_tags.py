@@ -4,6 +4,7 @@ from collections import Counter
 
 _RE_CJK = re.compile(r"[\u4e00-\u9fff]{2,6}")
 _RE_EN = re.compile(r"[A-Za-z]{4,20}")
+_RE_CJK_1 = re.compile(r"[\u4e00-\u9fff]{1,4}")
 
 
 _STOPWORDS_CJK = {
@@ -101,6 +102,31 @@ _STOPWORDS_CJK = {
     "完结",
     "开始",
     "结束",
+    "说道",
+    "问道",
+    "笑道",
+    "看着",
+    "看了",
+    "看见",
+    "感觉",
+    "突然",
+    "继续",
+    "同时",
+    "之后",
+    "之前",
+    "发现",
+    "时候",
+    "看到",
+    "知道",
+    "听到",
+    "看向",
+    "说道",
+    "什么",
+    "怎么",
+    "如果",
+    "然后",
+    "无关",
+    "内容",
 }
 
 
@@ -131,6 +157,8 @@ _ADULT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("高潮", ("高潮", "射精", "插入", "抽插", "内射", "深喉", "舔", "口交")),
 ]
 
+_SINGLE_CHAR_WHITELIST = {"爽", "虐", "燃"}
+
 
 def _normalize_tag(t: str) -> str:
     t = (t or "").strip().lstrip("#")
@@ -141,6 +169,9 @@ def _normalize_tag(t: str) -> str:
 
 def _tokenize_cjk(text: str) -> list[str]:
     return _RE_CJK.findall(text or "")
+
+def _tokenize_cjk_1(text: str) -> list[str]:
+    return _RE_CJK_1.findall(text or "")
 
 
 def _tokenize_en(text: str) -> list[str]:
@@ -204,6 +235,38 @@ def _keyword_hits(text: str, keys: tuple[str, ...]) -> tuple[int, int]:
     return distinct, total
 
 
+def _title_keywords(title: str, text: str) -> list[str]:
+    title = (title or "").strip()
+    if not title:
+        return []
+    text = text or ""
+    toks = [_normalize_tag(x) for x in _tokenize_cjk(title)]
+    out: list[str] = []
+
+    def add(t: str) -> None:
+        if _is_noise_token(t):
+            return
+        if t not in out:
+            out.append(t)
+
+    for t in toks:
+        if not t:
+            continue
+        if len(t) <= 4:
+            add(t)
+            continue
+        for k in (4, 3, 2):
+            for i in range(0, len(t) - k + 1):
+                sub = t[i : i + k]
+                if len(sub) < 2:
+                    continue
+                if text and sub not in text:
+                    continue
+                add(sub)
+
+    return out[:10]
+
+
 def _is_noise_token(t: str) -> bool:
     if not t:
         return True
@@ -216,6 +279,8 @@ def _is_noise_token(t: str) -> bool:
     if t.startswith("第") and t.endswith("章"):
         return True
     if t.startswith("第") and t.endswith("节"):
+        return True
+    if len(t) == 1 and t not in _SINGLE_CHAR_WHITELIST:
         return True
     return False
 
@@ -230,23 +295,25 @@ def generate_tags(*, title: str, text: str, limit: int = 10) -> list[str]:
     segments = sample_segments(text=text, segment_len=seg_len, segments=5)
     low_src = src.lower()
 
+    title_tags = _title_keywords(title, src)
+
     genre_scored: list[tuple[int, str]] = []
     for tag, keys in _GENRE_RULES:
         distinct, total = _keyword_hits(src, keys)
-        if distinct >= 2 or total >= 3:
+        if distinct >= 3 or total >= 6:
             score = distinct * 3 + min(total, 10)
             genre_scored.append((score, tag))
     genre_scored.sort(reverse=True)
-    genre_tags = [t for _, t in genre_scored[:3]]
+    genre_tags = [t for _, t in genre_scored[:2]]
 
     adult_scored: list[tuple[int, str]] = []
     for tag, keys in _ADULT_RULES:
         distinct, total = _keyword_hits(src, keys)
-        if distinct >= 1 and total >= 2:
+        if distinct >= 2 or total >= 6:
             score = distinct * 4 + min(total, 10)
             adult_scored.append((score, tag))
     adult_scored.sort(reverse=True)
-    adult_tags = [t for _, t in adult_scored[:3]]
+    adult_tags = [t for _, t in adult_scored[:4]]
 
     seg_token_sets: list[set[str]] = []
     seg_tokens_all: list[str] = []
@@ -266,7 +333,7 @@ def generate_tags(*, title: str, text: str, limit: int = 10) -> list[str]:
     name_counter: Counter[str] = Counter()
     name_mask: dict[str, int] = {}
     n = len(text) or 1
-    for m in _RE_CJK.finditer(text):
+    for m in _RE_CJK_1.finditer(text):
         t = _normalize_tag(m.group(0))
         if len(t) not in (2, 3):
             continue
@@ -287,20 +354,20 @@ def generate_tags(*, title: str, text: str, limit: int = 10) -> list[str]:
         if bc >= 2 and c >= 6:
             name_candidates.append((bc * 100000 + c, t))
     name_candidates.sort(reverse=True)
-    name_tags = [t for _, t in name_candidates[:4]]
+    name_tags = [t for _, t in name_candidates[:8]]
 
     keyword_candidates: list[tuple[int, str]] = []
     for t, c in seg_counter.items():
         if len(t) < 2 or len(t) > 6:
             continue
-        if t in genre_tags or t in adult_tags or t in name_tags:
+        if t in genre_tags or t in adult_tags or t in name_tags or t in title_tags:
             continue
         if title and t in title:
             continue
         sp = seg_presence.get(t, 0)
         if sp <= 0:
             continue
-        if c < 5 and sp < 2:
+        if c < 6 and sp < 2:
             continue
         score = sp * 1000 + c
         keyword_candidates.append((score, t))
@@ -311,6 +378,7 @@ def generate_tags(*, title: str, text: str, limit: int = 10) -> list[str]:
     en_counter = Counter(en_tokens)
 
     tags: list[str] = []
+    tags.extend(title_tags)
     tags.extend(adult_tags)
     tags.extend(genre_tags)
     tags.extend(name_tags)

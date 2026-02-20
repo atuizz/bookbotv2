@@ -91,3 +91,17 @@ def test_extract_upload_metadata_prefers_names_and_avoids_genre_overtrigger():
     assert "孟晓涵" in meta.tags
     assert any(t in meta.tags for t in ["李墨", "苏丽"])
     assert "军事" not in meta.tags
+
+
+def test_extract_upload_metadata_generates_more_tags_and_includes_title_keywords():
+    raw = (
+        ("无关内容\n" * 20000)
+        + ("杨楠 说道：孟晓涵。\n" * 40)
+        + ("无关内容\n" * 20000)
+        + ("肉棒 插入 高潮 舒服。\n" * 40)
+        + ("无关内容\n" * 20000)
+    ).encode("utf-8")
+    meta = extract_upload_metadata(file_name="淫荡少妇锁情咒（全本）.txt", file_ext="txt", file_bytes=raw)
+    assert len(meta.tags) >= 10
+    assert any(t in meta.tags for t in ["淫荡", "少妇", "锁情咒", "锁情", "少妇锁情"])
+    assert any(t in meta.tags for t in ["高潮", "肉棒", "舒服"])
