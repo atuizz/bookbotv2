@@ -70,3 +70,9 @@ def test_extract_upload_metadata_generates_tags_when_missing():
     meta = extract_upload_metadata(file_name="无标签示例.txt", file_ext="txt", file_bytes=raw)
     assert meta.tags
     assert any(t in meta.tags for t in ["仙侠", "武侠", "悬疑"])
+
+
+def test_extract_upload_metadata_generates_tags_from_tail_segments():
+    raw = ("前文铺垫\n" * 50000 + "末世来临，丧尸围城，废土求生。\n").encode("utf-8")
+    meta = extract_upload_metadata(file_name="尾部命中.txt", file_ext="txt", file_bytes=raw)
+    assert "末日" in meta.tags

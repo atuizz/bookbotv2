@@ -137,10 +137,43 @@ def _tokenize_en(text: str) -> list[str]:
     return [w.lower() for w in _RE_EN.findall(text or "")]
 
 
+def sample_text(*, title: str, text: str, budget: int = 200_000, segments: int = 5) -> str:
+    title = (title or "").strip()
+    text = (text or "")
+    if budget <= 0:
+        return title
+    if not text:
+        return title
+
+    seg = max(10_000, budget // max(1, segments))
+    n = len(text)
+    if n <= budget:
+        return (title + "\n" + text)[:budget]
+
+    positions: list[int] = []
+    if segments <= 1:
+        positions = [0]
+    else:
+        for i in range(segments):
+            pos = int((n - seg) * (i / (segments - 1)))
+            positions.append(max(0, min(n - seg, pos)))
+
+    parts: list[str] = [title] if title else []
+    seen: set[int] = set()
+    for pos in positions:
+        if pos in seen:
+            continue
+        seen.add(pos)
+        parts.append(text[pos : pos + seg])
+
+    out = "\n".join(parts)
+    return out[:budget]
+
+
 def generate_tags(*, title: str, text: str, limit: int = 10) -> list[str]:
     title = (title or "").strip()
     text = (text or "")
-    src = (title + "\n" + text)[:200_000]
+    src = sample_text(title=title, text=text, budget=200_000, segments=5)
 
     tags: list[str] = []
     low_src = src.lower()
@@ -180,4 +213,3 @@ def generate_tags(*, title: str, text: str, limit: int = 10) -> list[str]:
     tags = [t for t in (_normalize_tag(x) for x in tags) if t]
     tags = list(dict.fromkeys(tags))[:limit]
     return tags
-

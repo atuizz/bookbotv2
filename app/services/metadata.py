@@ -131,7 +131,7 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
                 continue
         if text is None:
             text = file_bytes.decode("latin1", errors="replace")
-        auto_text = text[:200_000]
+        auto_text = text
         fm = _extract_txt_front_matter(text)
         title = fm.get("title") or title
         author = fm.get("author") or author
