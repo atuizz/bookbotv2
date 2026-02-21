@@ -9,6 +9,7 @@ class UploadMetadata:
     title: str
     author: str
     tags: list[str]
+    tags_source: str
     word_count: int
     description: Optional[str]
 
@@ -120,6 +121,7 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
     description: Optional[str] = None
     word_count = 0
     auto_text = ""
+    tags_source = "none"
 
     if file_ext.lower() == "txt" and file_bytes:
         text = None
@@ -135,7 +137,10 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
         fm = _extract_txt_front_matter(text)
         title = fm.get("title") or title
         author = fm.get("author") or author
-        tags = fm.get("tags") or tags
+        fm_tags = fm.get("tags") or []
+        if fm_tags:
+            tags = fm_tags
+            tags_source = "front_matter"
         description = fm.get("description") or description
         word_count = _count_word_like(text)
 
@@ -143,6 +148,8 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
     author = _clean_author(author)
     if not tags and file_ext.lower() == "txt" and auto_text:
         tags = generate_tags(title=title, text=auto_text, limit=25)
+        if tags:
+            tags_source = "auto"
     tags = [t for t in (_normalize_tag(x) for x in tags) if t]
     tags = list(dict.fromkeys(tags))[:30]
 
@@ -150,6 +157,7 @@ def extract_upload_metadata(*, file_name: str, file_ext: str, file_bytes: bytes)
         title=title,
         author=author,
         tags=tags,
+        tags_source=tags_source,
         word_count=int(word_count or 0),
         description=description,
     )
