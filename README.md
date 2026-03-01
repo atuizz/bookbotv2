@@ -102,7 +102,7 @@ sudo systemctl status book_bot_v2
 sudo journalctl -u book_bot_v2 -f
 ```
 
-### 方式二：手动安装
+### 方式三：手动安装
 
 #### 1. 系统要求
 

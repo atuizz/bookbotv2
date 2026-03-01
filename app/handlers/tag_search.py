@@ -69,9 +69,9 @@ async def perform_tag_search(
     执行标签搜索
 
     与普通搜索的区别:
-    1. 搜索范围: tags, authors, characters 字段
-    2. 权重: 标签匹配优先级更高
-    3. 结果排序: 按标签相关性排序
+    1. 交互语义: 明确告诉用户这是“标签/主角”搜索入口
+    2. 展示文案: 结果前缀会标注“标签/主角搜索”
+    3. 搜索执行: 仍复用统一搜索服务（由 Meilisearch 索引配置决定实际可检索字段）
     """
     filters = filters or {}
     prefix_text = "🏷️ <b>标签/主角搜索</b>"
