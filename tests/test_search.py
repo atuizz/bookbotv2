@@ -256,6 +256,12 @@ class TestBuildSearchKeyboard:
     def test_no_result_text_contains_rating(self):
         assert "内容分级:全部" in build_no_result_text({})
 
+    def test_no_result_text_contains_adult_rating(self):
+        assert "内容分级:成人" in build_no_result_text({"content_rating": "adult"})
+
+    def test_no_result_text_compat_with_legacy_teen_value(self):
+        assert "内容分级:成人" in build_no_result_text({"content_rating": "teen"})
+
 
 # ============================================================================
 # 集成测试 (需要外部服务)

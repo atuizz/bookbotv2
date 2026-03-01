@@ -208,8 +208,9 @@ def get_content_rating_label(filters: Optional[Dict]) -> str:
     value = filters.get("content_rating")
     if value == "safe":
         return "安全"
-    if value == "teen":
-        return "少年"
+    # 历史上曾使用 teen，当前筛选项使用 adult；两者都映射为成人分级
+    if value in {"teen", "adult"}:
+        return "成人"
     if value == "unknown":
         return "未知"
     return "全部"
