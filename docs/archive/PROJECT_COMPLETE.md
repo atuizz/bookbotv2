@@ -159,8 +159,8 @@
 ```bash
 # 1. 克隆项目
 cd /opt
-git clone <repository-url> book_bot_v2
-cd book_bot_v2
+git clone <repository-url> bookbot
+cd bookbot
 
 # 2. 安装依赖
 ./manage.sh install

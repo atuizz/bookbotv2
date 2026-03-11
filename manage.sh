@@ -352,7 +352,7 @@ cmd_doctor() {
     # 4. 检查 Bot 服务日志
     if command -v systemctl &>/dev/null; then
         log_info "检查 Systemd 服务状态..."
-        if systemctl is-active --quiet book-bot-v2; then
+        if systemctl is-active --quiet bookbot-bot; then
             log_success "Bot 服务正在运行"
         else
             log_error "Bot 服务未运行!"
@@ -360,10 +360,10 @@ cmd_doctor() {
         
         log_info "Bot 服务最近日志 (最后 20 行):"
         echo -e "${YELLOW}--------------------------------------------------${NC}"
-        sudo journalctl -u book-bot-v2 -n 20 --no-pager
+        sudo journalctl -u bookbot-bot -n 20 --no-pager
         echo -e "${YELLOW}--------------------------------------------------${NC}"
         
-        if systemctl is-active --quiet book-bot-v2-worker; then
+        if systemctl is-active --quiet bookbot-worker; then
             log_success "Worker 服务正在运行"
         else
             log_error "Worker 服务未运行!"

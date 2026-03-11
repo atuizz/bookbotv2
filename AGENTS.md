@@ -1,4 +1,4 @@
-# AGENTS 规则 - bookbotv2
+# AGENTS 规则 - bookbot
 
 本文件是本仓库的长期规则与记忆文件，已整合 `CLAUDE.md` 的核心约束与项目特性。
 
@@ -8,7 +8,7 @@
 - 在具体技术实现上优先采用业界最佳实践，而非机械照搬文档字面描述。
 
 ## 2）项目定位
-- 项目名：`bookbotv2`
+- 项目名：`bookbot`
 - 项目类型：Telegram 电子书搜索与上传机器人
 - 运行环境：Python 3.11+
 - 主框架：`aiogram 3.x`

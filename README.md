@@ -75,7 +75,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/atuizz/bookbotv2/ma
 1. 克隆项目
 ```bash
 git clone https://github.com/atuizz/bookbotv2.git
-cd bookbotv2
+cd bookbot
 ```
 
 2. 运行管理脚本
@@ -90,16 +90,16 @@ sudo -u postgres psql -c "CREATE USER bookbot WITH PASSWORD 'your_password';"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE bookbot_v2 TO bookbot;"
 
 # 5. 运行数据库迁移
-cd /opt/book_bot_v2
+cd /opt/bookbot
 ./manage.sh migrate
 
 # 6. 启动服务
-sudo systemctl start book_bot_v2
-sudo systemctl start book_bot_v2-worker
+sudo systemctl start bookbot-bot
+sudo systemctl start bookbot-worker
 
 # 7. 查看状态
-sudo systemctl status book_bot_v2
-sudo journalctl -u book_bot_v2 -f
+sudo systemctl status bookbot-bot
+sudo journalctl -u bookbot-bot -f
 ```
 
 ### 方式三：手动安装
@@ -181,8 +181,8 @@ sudo systemctl start meilisearch
 
 ```bash
 # 克隆项目
-git clone https://github.com/yourusername/book_bot_v2.git /opt/book_bot_v2
-cd /opt/book_bot_v2
+git clone https://github.com/yourusername/bookbot.git /opt/bookbot
+cd /opt/bookbot
 
 # 创建虚拟环境
 python3.11 -m venv .venv
@@ -202,7 +202,7 @@ nano .env
 
 ```bash
 # 使用alembic运行迁移
-cd /opt/book_bot_v2
+cd /opt/bookbot
 alembic upgrade head
 ```
 
@@ -210,7 +210,7 @@ alembic upgrade head
 
 ```bash
 # Bot服务
-sudo tee /etc/systemd/system/book_bot_v2.service > /dev/null << EOF
+sudo tee /etc/systemd/system/bookbot-bot.service > /dev/null << EOF
 [Unit]
 Description=搜书神器 V2 - Telegram Bot
 After=network.target postgresql.service redis.service meilisearch.service
@@ -218,20 +218,20 @@ After=network.target postgresql.service redis.service meilisearch.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/book_bot_v2
-Environment=PATH=/opt/book_bot_v2/.venv/bin
-ExecStart=/opt/book_bot_v2/.venv/bin/python run_bot.py
+WorkingDirectory=/opt/bookbot
+Environment=PATH=/opt/bookbot/.venv/bin
+ExecStart=/opt/bookbot/.venv/bin/python run_bot.py
 Restart=always
 RestartSec=10
-StandardOutput=append:/opt/book_bot_v2/logs/bot.log
-StandardError=append:/opt/book_bot_v2/logs/bot_error.log
+StandardOutput=append:/opt/bookbot/logs/bot.log
+StandardError=append:/opt/bookbot/logs/bot_error.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # Worker服务
-sudo tee /etc/systemd/system/book_bot_v2-worker.service > /dev/null << EOF
+sudo tee /etc/systemd/system/bookbot-worker.service > /dev/null << EOF
 [Unit]
 Description=搜书神器 V2 - Background Worker
 After=network.target postgresql.service redis.service
@@ -239,13 +239,13 @@ After=network.target postgresql.service redis.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/book_bot_v2
-Environment=PATH=/opt/book_bot_v2/.venv/bin
-ExecStart=/opt/book_bot_v2/.venv/bin/arq app.worker.WorkerSettings
+WorkingDirectory=/opt/bookbot
+Environment=PATH=/opt/bookbot/.venv/bin
+ExecStart=/opt/bookbot/.venv/bin/arq app.worker.WorkerSettings
 Restart=always
 RestartSec=10
-StandardOutput=append:/opt/book_bot_v2/logs/worker.log
-StandardError=append:/opt/book_bot_v2/logs/worker_error.log
+StandardOutput=append:/opt/bookbot/logs/worker.log
+StandardError=append:/opt/bookbot/logs/worker_error.log
 
 [Install]
 WantedBy=multi-user.target
@@ -253,15 +253,15 @@ EOF
 
 # 重载systemd并启用服务
 sudo systemctl daemon-reload
-sudo systemctl enable book_bot_v2
-sudo systemctl enable book_bot_v2-worker
+sudo systemctl enable bookbot-bot
+sudo systemctl enable bookbot-worker
 
 # 启动服务
-sudo systemctl start book_bot_v2
-sudo systemctl start book_bot_v2-worker
+sudo systemctl start bookbot-bot
+sudo systemctl start bookbot-worker
 
 # 查看状态
-sudo systemctl status book_bot_v2
+sudo systemctl status bookbot-bot
 ```
 
 ---
@@ -269,7 +269,7 @@ sudo systemctl status book_bot_v2
 ## 📁 项目结构
 
 ```
-book_bot_v2/
+bookbot/
 ├── app/                      # 主应用包
 │   ├── __init__.py
 │   ├── bot.py               # Bot 主入口
@@ -384,25 +384,25 @@ book_bot_v2/
 
 ```bash
 # 查看Bot状态
-sudo systemctl status book_bot_v2
+sudo systemctl status bookbot-bot
 
 # 查看Worker状态
-sudo systemctl status book_bot_v2-worker
+sudo systemctl status bookbot-worker
 
 # 启动Bot
-sudo systemctl start book_bot_v2
+sudo systemctl start bookbot-bot
 
 # 停止Bot
-sudo systemctl stop book_bot_v2
+sudo systemctl stop bookbot-bot
 
 # 重启Bot
-sudo systemctl restart book_bot_v2
+sudo systemctl restart bookbot-bot
 
 # 查看Bot日志
-sudo journalctl -u book_bot_v2 -f
+sudo journalctl -u bookbot-bot -f
 
 # 查看Worker日志
-sudo journalctl -u book_bot_v2-worker -f
+sudo journalctl -u bookbot-worker -f
 ```
 
 ---

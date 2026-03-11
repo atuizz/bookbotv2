@@ -50,8 +50,9 @@ fi
 
 # 项目配置
 PROJECT_NAME="搜书神器 V2"
-PROJECT_DIR="/opt/book_bot_v2"
-SERVICE_NAME="book-bot-v2"
+PROJECT_DIR="/opt/bookbot"
+SERVICE_NAME="bookbot-bot"
+WORKER_SERVICE_NAME="bookbot-worker"
 REPO_URL="https://github.com/atuizz/bookbotv2.git"
 REDIS_PORT_SELECTED=6379
 DB_DEFAULT_HOST="127.0.0.1"
@@ -705,7 +706,7 @@ if [[ $HAS_SYSTEMD -eq 1 ]]; then
     info "创建systemd服务文件..."
 
     # Bot服务
-    cat > /etc/systemd/system/book-bot-v2.service << EOF
+    cat > /etc/systemd/system/${SERVICE_NAME}.service << EOF
 [Unit]
 Description=搜书神器 V2 - Telegram Bot
 After=network.target
@@ -729,7 +730,7 @@ WantedBy=multi-user.target
 EOF
 
     # Worker服务
-    cat > /etc/systemd/system/book-bot-v2-worker.service << EOF
+    cat > /etc/systemd/system/${WORKER_SERVICE_NAME}.service << EOF
 [Unit]
 Description=搜书神器 V2 - Background Worker
 After=network.target
@@ -756,8 +757,8 @@ EOF
     systemctl daemon-reload
 
     # 启用服务
-    systemctl enable book-bot-v2.service
-    systemctl enable book-bot-v2-worker.service
+    systemctl enable ${SERVICE_NAME}.service
+    systemctl enable ${WORKER_SERVICE_NAME}.service
 
     success "systemd服务配置完成"
 else
@@ -781,8 +782,8 @@ fi
 if [[ $HAS_SYSTEMD -eq 1 ]]; then
     info "启动服务..."
     # 使用 restart 确保代码更新后服务重启
-    systemctl restart book-bot-v2
-    systemctl restart book-bot-v2-worker
+    systemctl restart ${SERVICE_NAME}
+    systemctl restart ${WORKER_SERVICE_NAME}
 else
     warn "检测到非 systemd 环境，跳过服务启动"
 fi
@@ -790,16 +791,16 @@ fi
 # 检查服务状态
 if [[ $HAS_SYSTEMD -eq 1 ]]; then
     sleep 3
-    if systemctl is-active --quiet book-bot-v2; then
+    if systemctl is-active --quiet ${SERVICE_NAME}; then
         success "Bot 服务启动成功"
     else
-        warn "Bot 服务启动失败，请使用 systemctl status book-bot-v2 查看日志"
+        warn "Bot 服务启动失败，请使用 systemctl status ${SERVICE_NAME} 查看日志"
     fi
 
-    if systemctl is-active --quiet book-bot-v2-worker; then
+    if systemctl is-active --quiet ${WORKER_SERVICE_NAME}; then
         success "Worker 服务启动成功"
     else
-        warn "Worker 服务启动失败，请使用 systemctl status book-bot-v2-worker 查看日志"
+        warn "Worker 服务启动失败，请使用 systemctl status ${WORKER_SERVICE_NAME} 查看日志"
     fi
 fi
 
@@ -823,8 +824,8 @@ if [[ -n "$DEPLOY_NEW_COMMIT" ]]; then
 fi
 echo ""
 echo -e "${green}服务状态:${reset}"
-systemctl status book-bot-v2 --no-pager | grep "Active:" || true
-systemctl status book-bot-v2-worker --no-pager | grep "Active:" || true
+systemctl status ${SERVICE_NAME} --no-pager | grep "Active:" || true
+systemctl status ${WORKER_SERVICE_NAME} --no-pager | grep "Active:" || true
 echo ""
 
 success "所有服务已启动，您可以开始使用了！"

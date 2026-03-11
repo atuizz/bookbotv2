@@ -14,21 +14,21 @@
 - Bot 全局使用 HTML ParseMode 时，用户输入、书名、作者等若包含 `<` `>` `&` 会破坏消息渲染，形成 Telegram HTML 注入风险。
 
 **修复**
-- 新增统一转义函数 [text.py](file:///d:/CODE/book_bot_v2/app/core/text.py)。
+- 新增统一转义函数 [text.py](file:///d:/CODE/bookbotv4/app/core/text.py)。
 - 在搜索、标签搜索、上传提示、邀请页、排行榜、用户中心、书籍详情卡等动态字段输出处统一转义。
 
 **涉及代码**
-- [search.py](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
-- [tag_search.py](file:///d:/CODE/book_bot_v2/app/handlers/tag_search.py)
-- [upload.py](file:///d:/CODE/book_bot_v2/app/handlers/upload.py)
-- [invite.py](file:///d:/CODE/book_bot_v2/app/handlers/invite.py)
-- [rankings.py](file:///d:/CODE/book_bot_v2/app/handlers/rankings.py)
-- [user.py](file:///d:/CODE/book_bot_v2/app/handlers/user.py)
-- 书籍详情卡输出与按钮：[build_book_caption/send_book_card](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py#L106-L258)
+- [search.py](file:///d:/CODE/bookbotv4/app/handlers/search.py)
+- [tag_search.py](file:///d:/CODE/bookbotv4/app/handlers/tag_search.py)
+- [upload.py](file:///d:/CODE/bookbotv4/app/handlers/upload.py)
+- [invite.py](file:///d:/CODE/bookbotv4/app/handlers/invite.py)
+- [rankings.py](file:///d:/CODE/bookbotv4/app/handlers/rankings.py)
+- [user.py](file:///d:/CODE/bookbotv4/app/handlers/user.py)
+- 书籍详情卡输出与按钮：[build_book_caption/send_book_card](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py#L106-L258)
 
 **测试**
-- 新增搜索结果 HTML 转义断言：[test_search.py](file:///d:/CODE/book_bot_v2/tests/test_search.py)
-- 新增邀请页 HTML 转义与分享链接编码断言：[test_invite.py](file:///d:/CODE/book_bot_v2/tests/test_invite.py)
+- 新增搜索结果 HTML 转义断言：[test_search.py](file:///d:/CODE/bookbotv4/tests/test_search.py)
+- 新增邀请页 HTML 转义与分享链接编码断言：[test_invite.py](file:///d:/CODE/bookbotv4/tests/test_invite.py)
 
 ---
 
@@ -38,7 +38,7 @@
 - `/help` 构建键盘使用 `InlineKeyboardMarkup/InlineKeyboardButton`，但未导入，运行时触发 NameError。
 
 **修复**
-- 补齐 import：[common.py](file:///d:/CODE/book_bot_v2/app/handlers/common.py)
+- 补齐 import：[common.py](file:///d:/CODE/bookbotv4/app/handlers/common.py)
 
 ---
 
@@ -48,7 +48,7 @@
 - `build_search_result_text(response, filters)` 把 `filters` 误当作 `bot_username` 传入，导致结果链接构建异常/不可预期。
 
 **修复**
-- 改为 `build_search_result_text(response, get_settings().bot_username, filters)` 并补齐 query 转义：[tag_search.py](file:///d:/CODE/book_bot_v2/app/handlers/tag_search.py)
+- 改为 `build_search_result_text(response, get_settings().bot_username, filters)` 并补齐 query 转义：[tag_search.py](file:///d:/CODE/bookbotv4/app/handlers/tag_search.py)
 
 ---
 
@@ -59,7 +59,7 @@
 - 分享 URL 未编码，包含特殊字符时会破坏链接参数。
 
 **修复**
-- 抽出 `build_invite_main()` 并在回调中使用 `callback.from_user`；分享 URL 使用 `urllib.parse.quote` 编码：[invite.py](file:///d:/CODE/book_bot_v2/app/handlers/invite.py)
+- 抽出 `build_invite_main()` 并在回调中使用 `callback.from_user`；分享 URL 使用 `urllib.parse.quote` 编码：[invite.py](file:///d:/CODE/bookbotv4/app/handlers/invite.py)
 
 ---
 
@@ -71,7 +71,7 @@
 
 **修复**
 - 增加 `report:` 回调处理，并将举报原因选择改为发送新消息，不编辑原文件消息：
-  - 举报入口与原因回调：[book_detail.py](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py#L308-L532)
+  - 举报入口与原因回调：[book_detail.py](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py#L308-L532)
 
 ---
 
@@ -82,7 +82,7 @@
 
 **修复**
 - 对插入捕获 `IntegrityError` 并回滚；收藏计数改为数据库原子 `UPDATE favorite_count = favorite_count ± 1`，避免并发下的脏计数：
-  - [handle_favorite](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py#L334-L442)
+  - [handle_favorite](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py#L334-L442)
 
 ---
 
@@ -93,7 +93,7 @@
 
 **修复**
 - 查询 DB `User.is_admin` 并拒绝非管理员：
-  - [group_verify.py](file:///d:/CODE/book_bot_v2/app/handlers/group_verify.py)
+  - [group_verify.py](file:///d:/CODE/bookbotv4/app/handlers/group_verify.py)
 
 ---
 
@@ -105,16 +105,16 @@
 
 - 截图内容：Telegram “Bot 介绍卡片（What can this bot do?）”样式说明 + 命令列表。
 - 代码对齐：将 `/start` 文案对齐到截图说明（但 BotFather 里的“介绍卡片文本/命令列表”本质属于 Telegram 配置项，不完全由代码控制）：
-  - [/start](file:///d:/CODE/book_bot_v2/app/handlers/common.py)
+  - [/start](file:///d:/CODE/bookbotv4/app/handlers/common.py)
 
 ### 3.2 3ad222ad-23b7-47ee-ad24-78153cddb941.jpg（/help 与 /settings）
 
 - /help 文案 + 两按钮：
   - 入口：`/help`
-  - 文案与按钮：[/help](file:///d:/CODE/book_bot_v2/app/handlers/common.py)
+  - 文案与按钮：[/help](file:///d:/CODE/bookbotv4/app/handlers/common.py)
 - /settings 面板：
   - 入口：`/settings`
-  - 文案与按钮：[/settings](file:///d:/CODE/book_bot_v2/app/handlers/settings.py)
+  - 文案与按钮：[/settings](file:///d:/CODE/bookbotv4/app/handlers/settings.py)
 
 ### 3.3 ae8454be-2a72-43d4-b52e-f126bec3fc8e.jpg、54e930f7-a2e1-4ef5-a65e-f02562572443.jpg（搜索结果 + 筛选键盘）
 
@@ -123,8 +123,8 @@
   - 头部 Results 统计行、序号 01-10、格式 Emoji、评分/质量、捐赠提示
   - 分页行 `1∨ 2 3 4 5 6 ...N`、筛选行（分级/格式/体积/字数）、排序行（最热/最新/最大）、序号按钮 1-10
 - 代码位置：
-  - 结果文本：[build_search_result_text](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
-  - 键盘构建：[build_search_keyboard](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
+  - 结果文本：[build_search_result_text](file:///d:/CODE/bookbotv4/app/handlers/search.py)
+  - 键盘构建：[build_search_keyboard](file:///d:/CODE/bookbotv4/app/handlers/search.py)
 
 ### 3.4 image_a446bd.jpg、54e930f7-a2e1-4ef5-a65e-f02562572443.jpg（上传状态）
 
@@ -133,8 +133,8 @@
   - “加入队列/正在收录/收录成功/文件已存在”状态文案
   - `/info` 引导与排队/成功/失败统计行
 - 代码位置：
-  - [upload.py](file:///d:/CODE/book_bot_v2/app/handlers/upload.py)
-  - [/info](file:///d:/CODE/book_bot_v2/app/handlers/common.py)
+  - [upload.py](file:///d:/CODE/bookbotv4/app/handlers/upload.py)
+  - [/info](file:///d:/CODE/bookbotv4/app/handlers/common.py)
 
 ### 3.5 image_a3e500.jpg、image_a3e524.jpg（书籍详情卡：管理员视图）
 
@@ -143,8 +143,8 @@
   - 详情卡字段（书名/作者/文库/统计/评分/质量/标签/创建/更新/上传）与分隔符 `|`、`R`、`笔`
   - 按钮布局：`频道/群组/反馈/捐赠` + `删除标签/举报书籍/编辑书籍` + `编辑历史/关闭/返回`
 - 代码位置：
-  - 详情卡输出与键盘：[book_detail.py:L106-L258](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py#L106-L258)
-  - 举报原因回调处理：[book_detail.py](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py)
+  - 详情卡输出与键盘：[book_detail.py:L106-L258](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py#L106-L258)
+  - 举报原因回调处理：[book_detail.py](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py)
 
 ## 4. 仍需你补充截图/确认的缺口
 

@@ -15,7 +15,7 @@
   - `没有检索到结果，请尝试其他关键词或调整筛选条件`
   - `内容分级:全部`
 - 对应实现：
-  - [build_no_result_text](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
+  - [build_no_result_text](file:///d:/CODE/bookbotv4/app/handlers/search.py)
 - 现状：
   - 已按两行文案输出，并将“内容分级”与当前筛选联动。
 
@@ -24,7 +24,7 @@
 - 基线特征：
   - 翻页后直接展示新页内容，不出现“加载中/应用中”占位文本。
 - 对应实现：
-  - [on_search_callback](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
+  - [on_search_callback](file:///d:/CODE/bookbotv4/app/handlers/search.py)
 - 现状：
   - 翻页/排序/筛选均不再插入占位文本，直接 edit 更新。
 
@@ -34,8 +34,8 @@
   - 点击筛选按钮展开子面板；子面板中选中项以 `✅` 前缀标记；
   - 体积/字数为区间筛选。
 - 对应实现：
-  - [build_search_keyboard](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
-  - 区间筛选支持（服务层）：[SearchFilters](file:///d:/CODE/book_bot_v2/app/services/search.py)
+  - [build_search_keyboard](file:///d:/CODE/bookbotv4/app/handlers/search.py)
+  - 区间筛选支持（服务层）：[SearchFilters](file:///d:/CODE/bookbotv4/app/services/search.py)
 - 现状：
   - 已实现子面板展开与区间筛选（min/max）。
 
@@ -45,8 +45,8 @@
   - “收藏”按钮状态切换；
   - toast：`已添加到我喜欢的书籍`
 - 对应实现：
-  - [handle_favorite](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py)
-  - [build_user_book_keyboard](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py)
+  - [handle_favorite](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py)
+  - [build_user_book_keyboard](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py)
 - 现状：
   - 已实现按钮切换与 toast 文案。
 
@@ -55,8 +55,8 @@
 - 基线特征：
   - 进入书单模式后，底部键盘替换为：`++新建`、`<返回`、`[{N}本] 我喜欢的书籍`
 - 对应实现：
-  - [build_booklist_keyboard](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py)
-  - [show_booklist_menu](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py)
+  - [build_booklist_keyboard](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py)
+  - [show_booklist_menu](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py)
 - 现状：
   - 已实现书单模式键盘；当前“我喜欢的书籍”映射为收藏列表（无需新增数据模型）。
 
@@ -65,7 +65,7 @@
 - 基线内容：
   - 需要从截图逐行抄取并与 `/help` 输出对齐（该图片在当前环境上传预览失败，但不影响后续逐行对齐实现）。
 - 对应实现：
-  - [/help](file:///d:/CODE/book_bot_v2/app/handlers/common.py)
+  - [/help](file:///d:/CODE/bookbotv4/app/handlers/common.py)
 - 现状：
   - 已逐行对齐截图文案与按钮（“邀请书友使用 / 捐赠会员计划”）。
 

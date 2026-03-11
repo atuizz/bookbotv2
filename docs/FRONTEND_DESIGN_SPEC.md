@@ -9,12 +9,12 @@
 - 文本：
   - `🔍 正在搜索: <b>{关键词}</b>...`
 - 位置：
-  - [perform_search](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
+  - [perform_search](file:///d:/CODE/bookbotv4/app/handlers/search.py)
 
 ### 1.2 搜索结果卡片
 
 - 文本输出位置：
-  - [build_search_result_text](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
+  - [build_search_result_text](file:///d:/CODE/bookbotv4/app/handlers/search.py)
 - 结果项输出规则（每条 2 行）：
   - 第 1 行：`{序号两位}. {可选:❓ }{书名}{可选: ⭐/🔞}`
   - 第 2 行：`{格式emoji}·{格式}·{体积}·{字数}字·{评分/质量}`
@@ -27,7 +27,7 @@
   - `没有检索到结果，请尝试其他关键词或调整筛选条件`
   - `内容分级:{全部|安全|成人|未知}`
 - 输出位置：
-  - [build_no_result_text](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
+  - [build_no_result_text](file:///d:/CODE/bookbotv4/app/handlers/search.py)
 
 ### 1.4 翻页加载中态
 
@@ -38,7 +38,7 @@
 ### 1.5 搜索键盘：分页 + 筛选 + 排序 + 序号下载
 
 - 输出位置：
-  - [build_search_keyboard](file:///d:/CODE/book_bot_v2/app/handlers/search.py)
+  - [build_search_keyboard](file:///d:/CODE/bookbotv4/app/handlers/search.py)
 
 #### 分页行（第 1 行）
 
@@ -91,7 +91,7 @@
   - `docs/原型截图/收藏后.png`
   - `docs/原型截图/添加书单.png`
 - 键盘输出位置：
-  - [build_user_book_keyboard](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py)
+  - [build_user_book_keyboard](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py)
 - 布局（2 行 × 3 列）：
   - 行1：`🤍收藏/💚收藏`、`+书单`、`💬评价`
   - 行2：`+加标签`、`💡我相似`、`...更多`
@@ -101,12 +101,12 @@
 - 收藏成功：`已添加到我喜欢的书籍`
 - 取消收藏：`已取消收藏`
 - 位置：
-  - [handle_favorite](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py)
+  - [handle_favorite](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py)
 
 ### 2.3 书单选择模式
 
 - 键盘输出位置：
-  - [build_booklist_keyboard](file:///d:/CODE/book_bot_v2/app/handlers/book_detail.py)
+  - [build_booklist_keyboard](file:///d:/CODE/bookbotv4/app/handlers/book_detail.py)
 - 布局：
   - 行1：`++新建`、`<返回`
   - 行2：`✅[{N}本] 我喜欢的书籍`（当前实现将“我喜欢的书籍”映射为收藏列表）
@@ -115,6 +115,6 @@
 
 - 参考截图：`docs/原型截图/新手帮助.png`
 - 输出位置：
-  - [/help](file:///d:/CODE/book_bot_v2/app/handlers/common.py)
+  - [/help](file:///d:/CODE/bookbotv4/app/handlers/common.py)
 - 按钮：
   - `邀请书友使用`、`捐赠会员计划`

@@ -4,7 +4,8 @@
 - 用户要求：每次提供的重要信息、约束、产品决策或实施进度，都要同步写入本文件，避免会话中断后丢失上下文。
 
 ## 当前项目共识
-- 当前工作目录：`D:\CODE\book_bot_v3\bookbotv2`
+- 当前工作目录：`D:\CODE\bookbotv4`
+- 当前开发分支：`codex/bookbbotv4`
 - 项目类型：Telegram 电子书搜索与上传机器人
 - 主要技术栈：Python 3.11、aiogram 3.x、SQLAlchemy Async、PostgreSQL、Redis、Meilisearch、arq
 
@@ -27,3 +28,4 @@
 - 已补 `/start list_<token>` 深链分发，并把捐赠入口切到静态说明页。
 - 已将详情页待输入状态路由前置，避免被通用文本搜索提前吞掉。
 - 已补管理员现有标签删除入口，并新增针对新键盘/分享 token 的测试文件。
+- 已开始做路径迁移收口，统一仓库可见标识、部署目录与 systemd 服务名到 `bookbot`。

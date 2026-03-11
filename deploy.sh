@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 配置变量
-PROJECT_NAME="book_bot_v2"
+PROJECT_NAME="bookbot"
 PROJECT_DIR="/opt/${PROJECT_NAME}"
 BACKUP_DIR="/opt/backups/${PROJECT_NAME}"
 SERVICE_NAME="${PROJECT_NAME}"

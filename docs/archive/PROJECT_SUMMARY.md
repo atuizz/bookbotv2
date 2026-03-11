@@ -132,11 +132,11 @@ pytest tests/ -v
 sudo bash deploy.sh
 
 # 2. 编辑配置
-sudo nano /opt/book_bot_v2/.env
+sudo nano /opt/bookbot/.env
 
 # 3. 启动服务
-sudo systemctl start book_bot_v2
-sudo systemctl start book_bot_v2-worker
+sudo systemctl start bookbot-bot
+sudo systemctl start bookbot-worker
 ```
 
 ### 方式二：手动部署
@@ -157,7 +157,7 @@ sudo systemctl start book_bot_v2-worker
 ## 📁 项目结构
 
 ```
-book_bot_v2/
+bookbot/
 ├── app/                      # 主应用包
 │   ├── bot.py               # Bot 主入口
 │   ├── worker.py            # 后台 Worker
