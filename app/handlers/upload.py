@@ -23,6 +23,7 @@ from app.core.models import Book, File, User, FileRef, BookStatus, FileFormat, T
 from app.core.text import escape_html
 from app.services.metadata import extract_upload_metadata
 from app.services.search import get_search_service
+from app.worker import task_queue
 
 upload_router = Router(name="upload")
 
@@ -209,6 +210,34 @@ async def handle_document(message: Message):
         except Exception:
             pass
 
+        settings = get_settings()
+        if settings.upload_async_enabled:
+            settings.temp_dir.mkdir(parents=True, exist_ok=True)
+            temp_path = settings.temp_dir / f"upload_{user.id}_{message.message_id}_{file_hash[:8]}.{file_ext}"
+            temp_path.write_bytes(file_bytes)
+
+            if not task_queue.pool:
+                await task_queue.connect()
+
+            job_id = await task_queue.enqueue_upload(
+                file_id=document.file_id,
+                file_name=file_name,
+                file_size=file_size,
+                file_path=str(temp_path),
+                user_id=user.id,
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+            )
+            await status_msg.edit_text(
+                f"文件：{safe_file_name}\n"
+                f"大小：{format_file_size(file_size)}\n"
+                f"状态：已进入后台队列，等待处理\n\n"
+                f"任务ID：<code>{job_id}</code>\n"
+                f"队列(1) 成功(0) 失败(0)\n"
+                f"发送 /info 查看书库统计和上传进度"
+            )
+            return
+
         # 更新状态
         await status_msg.edit_text(
             f"⏳ <b>正在处理上传...</b>\n\n"
@@ -277,7 +306,6 @@ async def handle_document(message: Message):
                 )
                 session.add(file_ref)
 
-            settings = get_settings()
             if settings.backup_channel_id:
                 try:
                     forwarded = await message.bot.forward_message(

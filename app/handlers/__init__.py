@@ -28,9 +28,9 @@ def register_handlers(dp: Dispatcher) -> None:
     # 按照优先级顺序注册
     # 越靠前优先级越高
     dp.include_router(upload_router)       # 上传处理器 (需要优先处理文档)
+    dp.include_router(book_detail_router)  # 书籍详情与待输入状态，需先于通用文本搜索
     dp.include_router(search_router)       # 搜索处理器
     dp.include_router(tag_search_router)   # 标签搜索处理器 (/ss)
-    dp.include_router(book_detail_router)  # 书籍详情处理器
     dp.include_router(user_router)         # 用户处理器
     dp.include_router(invite_router)       # 邀请处理器 (/my)
     dp.include_router(rankings_router)     # 排行榜处理器 (/top)

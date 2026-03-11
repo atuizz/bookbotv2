@@ -16,7 +16,8 @@ from app.core.database import get_session_factory
 from app.core.models import User, Book, BookStatus
 from app.core.deeplink import decode_payload
 from sqlalchemy import select, func
-from app.handlers.book_detail import send_book_card
+from app.handlers.book_detail import send_book_card, show_public_booklist
+from app.handlers.invite import parse_invite_code, bind_invite_relation
 
 common_router = Router(name="common")
 
@@ -61,10 +62,49 @@ HELP_KEYBOARD = InlineKeyboardMarkup(
 @common_router.message(Command("start"))
 async def cmd_start(message: Message):
     """处理 /start 命令"""
+    async def ensure_user() -> User:
+        tg_user = message.from_user
+        session_factory = get_session_factory()
+        async with session_factory() as session:
+            stmt = select(User).where(User.id == tg_user.id)
+            result = await session.execute(stmt)
+            user = result.scalar_one_or_none()
+            if not user:
+                user = User(
+                    id=tg_user.id,
+                    username=tg_user.username,
+                    first_name=tg_user.first_name,
+                    last_name=tg_user.last_name,
+                    coins=0,
+                    upload_count=0,
+                    download_count=0,
+                    search_count=0,
+                )
+                session.add(user)
+                await session.commit()
+                await session.refresh(user)
+            return user
+
     payload = ""
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) > 1:
         payload = parts[1].strip()
+    if payload.startswith("INV"):
+        inviter_id = parse_invite_code(payload)
+        if inviter_id is None:
+            await message.answer("⚠️ 无效或过期的邀请码")
+        else:
+            try:
+                current_user = await asyncio.wait_for(ensure_user(), timeout=3)
+                bound = await bind_invite_relation(
+                    inviter_id=inviter_id,
+                    invitee_id=current_user.id,
+                )
+                if bound:
+                    await message.answer("✅ 邀请绑定成功，邀请人已获得奖励")
+            except Exception as e:
+                logger.warning(f"处理邀请码失败: {e}")
+
     if payload.startswith("book_"):
         try:
             book_id = int(payload.replace("book_", "").strip())
@@ -88,6 +128,17 @@ async def cmd_start(message: Message):
 
         await perform_search(message, author, user_id=message.from_user.id)
         return
+    if payload.startswith("list_"):
+        token = payload.replace("list_", "", 1).strip()
+        if not token:
+            await message.answer("⚠️ 无效的书单分享参数")
+            return
+        await show_public_booklist(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            share_token=token,
+        )
+        return
 
     welcome_text = (
         "搜书神器是一个免费的 Telegram 机器人，致力于让每个人都能自由获取知识。我们提供了优秀的分享型文化内容，希望打造高质量的知识共享平台，让所有人都能轻松阅读。\n\n"
@@ -96,27 +147,6 @@ async def cmd_start(message: Message):
         "更多帮助请点击: /help"
     )
     await message.answer(welcome_text)
-
-    async def ensure_user() -> None:
-        tg_user = message.from_user
-        session_factory = get_session_factory()
-        async with session_factory() as session:
-            stmt = select(User).where(User.id == tg_user.id)
-            result = await session.execute(stmt)
-            user = result.scalar_one_or_none()
-            if not user:
-                user = User(
-                    id=tg_user.id,
-                    username=tg_user.username,
-                    first_name=tg_user.first_name,
-                    last_name=tg_user.last_name,
-                    coins=0,
-                    upload_count=0,
-                    download_count=0,
-                    search_count=0,
-                )
-                session.add(user)
-                await session.commit()
 
     async def ensure_user_with_timeout() -> None:
         try:
@@ -186,7 +216,10 @@ async def cmd_info(message: Message):
 
 @common_router.message(Command("review"))
 async def cmd_review(message: Message):
-    await message.answer("功能开发中...")
+    await message.answer(
+        "评分入口已调整为排行榜浏览。\n"
+        "你可以使用 /top rating 查看高分作品。"
+    )
 
 
 @common_router.callback_query(F.data.startswith("help:"))
@@ -199,7 +232,16 @@ async def on_help_callback(callback: CallbackQuery):
         await callback.answer()
         return
     if action == "donate":
-        await callback.answer("功能开发中...", show_alert=True)
+        settings = get_settings()
+        if not settings.donate_enabled:
+            await callback.message.answer("当前未开放捐赠说明页。")
+            await callback.answer()
+            return
+        text = f"{settings.donate_title}\n\n{settings.donate_text}"
+        if settings.donate_url:
+            text += f"\n\n了解更多: {settings.donate_url}"
+        await callback.message.answer(text)
+        await callback.answer()
         return
     await callback.answer()
 

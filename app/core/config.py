@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     # ============================================
     db_host: str = Field("localhost", description="PostgreSQL 主机")
     db_port: int = Field(5432, description="PostgreSQL 端口")
-    db_name: str = Field("bookbot", description="数据库名")
+    db_name: str = Field("bookbot_v2", description="数据库名")
     db_user: str = Field("bookbot_user", description="数据库用户")
     db_password: str = Field(..., description="数据库密码")
 
@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     # 业务逻辑配置
     # ============================================
     backup_channel_id: Optional[int] = Field(None, description="备份频道 ID")
+    upload_async_enabled: bool = Field(False, description="是否启用异步上传处理")
+    features_enabled: bool = Field(True, description="是否启用扩展功能")
 
     # 上传配置
     max_upload_size_mb: int = Field(100, description="最大上传文件大小 (MB)")
@@ -101,6 +103,16 @@ class Settings(BaseSettings):
     # ============================================
     log_level: str = Field("INFO", description="日志级别")
     log_format: str = Field("json", description="日志格式 (json/text)")
+
+    # 捐赠说明
+    donate_enabled: bool = Field(True, description="是否展示捐赠说明页")
+    donate_title: str = Field("捐赠会员计划", description="捐赠说明标题")
+    donate_text: str = Field(
+        "会员支持将用于提升服务稳定性、扩充书库与优先体验新功能。\n\n"
+        "当前版本仅提供说明页，如需捐赠请联系管理员。",
+        description="捐赠说明文案",
+    )
+    donate_url: Optional[str] = Field(None, description="捐赠外链")
 
     # ============================================
     # 路径配置

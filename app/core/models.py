@@ -232,6 +232,8 @@ class Book(Base):
     uploader: Mapped["User"] = relationship("User", back_populates="uploads", foreign_keys=[uploader_id], lazy="selectin")
     favorites: Mapped[List["Favorite"]] = relationship("Favorite", back_populates="book", lazy="selectin")
     book_tags: Mapped[List["BookTag"]] = relationship("BookTag", back_populates="book", lazy="selectin")
+    reviews: Mapped[List["BookReview"]] = relationship("BookReview", back_populates="book", lazy="selectin")
+    booklist_items: Mapped[List["BookListItem"]] = relationship("BookListItem", back_populates="book", lazy="selectin")
 
     # 索引
     __table_args__ = (
@@ -324,6 +326,186 @@ class Favorite(Base):
         UniqueConstraint('user_id', 'book_id', name='uq_user_favorite'),
         Index('ix_favorites_user_id', 'user_id'),
         Index('ix_favorites_book_id', 'book_id'),
+    )
+
+
+# ============================================
+# 邀请相关模型
+# ============================================
+
+class InviteRelation(Base):
+    """邀请关系（一个被邀请用户只允许绑定一个邀请人）"""
+    __tablename__ = "invite_relations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    inviter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), comment="邀请人ID")
+    invitee_id: Mapped[int] = mapped_column(ForeignKey("users.id"), comment="被邀请人ID")
+
+    __table_args__ = (
+        UniqueConstraint('invitee_id', name='uq_invitee_once'),
+        Index('ix_invite_relations_inviter_id', 'inviter_id'),
+        Index('ix_invite_relations_invitee_id', 'invitee_id'),
+        Index('ix_invite_relations_created_at', 'created_at'),
+    )
+
+
+class InviteRewardLog(Base):
+    """邀请奖励流水"""
+    __tablename__ = "invite_reward_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    inviter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), comment="邀请人ID")
+    invitee_id: Mapped[int] = mapped_column(ForeignKey("users.id"), comment="被邀请人ID")
+    reward_type: Mapped[str] = mapped_column(String(30), default="invite_register", comment="奖励类型")
+    coins: Mapped[int] = mapped_column(Integer, default=0, comment="奖励书币")
+
+    __table_args__ = (
+        Index('ix_invite_reward_logs_inviter_id', 'inviter_id'),
+        Index('ix_invite_reward_logs_invitee_id', 'invitee_id'),
+        Index('ix_invite_reward_logs_reward_type', 'reward_type'),
+        Index('ix_invite_reward_logs_created_at', 'created_at'),
+    )
+
+
+class UserSetting(Base):
+    """用户设置"""
+    __tablename__ = "user_settings"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, unique=True)
+
+    content_rating: Mapped[str] = mapped_column(String(20), default="all")
+    search_button_mode: Mapped[str] = mapped_column(String(20), default="preview")
+    hide_personal_info: Mapped[bool] = mapped_column(Boolean, default=False)
+    hide_upload_list: Mapped[bool] = mapped_column(Boolean, default=False)
+    close_upload_feedback: Mapped[bool] = mapped_column(Boolean, default=False)
+    close_invite_feedback: Mapped[bool] = mapped_column(Boolean, default=False)
+    close_download_feedback: Mapped[bool] = mapped_column(Boolean, default=False)
+    close_book_update_notice: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    __table_args__ = (
+        Index("ix_user_settings_user_id", "user_id"),
+    )
+
+
+# ============================================
+# 书单 / 评价 / 审核 / 审计
+# ============================================
+
+class BookList(Base):
+    """用户书单"""
+    __tablename__ = "booklists"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, comment="书单归属用户")
+    name: Mapped[str] = mapped_column(String(80), nullable=False, comment="书单名称")
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否默认书单")
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否公开分享")
+    share_token: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, unique=True, comment="分享令牌")
+
+    items: Mapped[List["BookListItem"]] = relationship("BookListItem", back_populates="booklist", lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "name", name="uq_booklists_user_name"),
+        Index("ix_booklists_user_id", "user_id"),
+        Index("ix_booklists_is_public", "is_public"),
+    )
+
+
+class BookListItem(Base):
+    """书单条目"""
+    __tablename__ = "booklist_items"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    list_id: Mapped[int] = mapped_column(ForeignKey("booklists.id"), nullable=False, comment="书单ID")
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"), nullable=False, comment="书籍ID")
+    added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="添加人ID")
+
+    booklist: Mapped["BookList"] = relationship("BookList", back_populates="items", lazy="selectin")
+    book: Mapped["Book"] = relationship("Book", back_populates="booklist_items", lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("list_id", "book_id", name="uq_booklist_items_unique"),
+        Index("ix_booklist_items_list_id", "list_id"),
+        Index("ix_booklist_items_book_id", "book_id"),
+    )
+
+
+class BookReview(Base):
+    """用户书籍评分与短评（每用户每书唯一）"""
+    __tablename__ = "book_reviews"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, comment="用户ID")
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"), nullable=False, comment="书籍ID")
+    rating: Mapped[int] = mapped_column(Integer, nullable=False, default=5, comment="评分(1-5)")
+    comment: Mapped[Optional[str]] = mapped_column(String(240), nullable=True, comment="短评")
+
+    book: Mapped["Book"] = relationship("Book", back_populates="reviews", lazy="selectin")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "book_id", name="uq_book_reviews_user_book"),
+        Index("ix_book_reviews_book_id", "book_id"),
+        Index("ix_book_reviews_user_id", "user_id"),
+        Index("ix_book_reviews_updated_at", "updated_at"),
+    )
+
+
+class TagApplication(Base):
+    """用户标签申请，管理员审核后生效"""
+    __tablename__ = "tag_applications"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, comment="申请用户")
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"), nullable=False, comment="书籍ID")
+    tag_name: Mapped[str] = mapped_column(String(50), nullable=False, comment="申请标签")
+    status: Mapped[str] = mapped_column(String(20), default="pending", comment="状态: pending/approved/rejected")
+    reviewed_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, comment="审核人")
+    review_note: Mapped[Optional[str]] = mapped_column(String(240), nullable=True, comment="审核备注")
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, comment="审核时间")
+
+    __table_args__ = (
+        Index("ix_tag_applications_book_id", "book_id"),
+        Index("ix_tag_applications_user_id", "user_id"),
+        Index("ix_tag_applications_status", "status"),
+        Index("ix_tag_applications_created_at", "created_at"),
+    )
+
+
+class BookEditHistory(Base):
+    """管理员编辑历史"""
+    __tablename__ = "book_edit_history"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"), nullable=False, comment="书籍ID")
+    editor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, comment="编辑人")
+    field_name: Mapped[str] = mapped_column(String(40), nullable=False, comment="字段")
+    old_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="旧值")
+    new_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="新值")
+
+    __table_args__ = (
+        Index("ix_book_edit_history_book_id", "book_id"),
+        Index("ix_book_edit_history_editor_id", "editor_id"),
+        Index("ix_book_edit_history_created_at", "created_at"),
+    )
+
+
+class TagAuditLog(Base):
+    """标签变更审计日志（含管理员删除）"""
+    __tablename__ = "tag_audit_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    book_id: Mapped[int] = mapped_column(ForeignKey("books.id"), nullable=False, comment="书籍ID")
+    tag_id: Mapped[Optional[int]] = mapped_column(ForeignKey("tags.id"), nullable=True, comment="标签ID")
+    actor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, comment="操作人")
+    action: Mapped[str] = mapped_column(String(20), nullable=False, comment="动作:add/remove/review")
+    detail: Mapped[Optional[str]] = mapped_column(String(240), nullable=True, comment="备注")
+
+    __table_args__ = (
+        Index("ix_tag_audit_logs_book_id", "book_id"),
+        Index("ix_tag_audit_logs_actor_id", "actor_id"),
+        Index("ix_tag_audit_logs_action", "action"),
+        Index("ix_tag_audit_logs_created_at", "created_at"),
     )
 
 

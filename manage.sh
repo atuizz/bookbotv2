@@ -193,10 +193,6 @@ cmd_migrate() {
         cd "$PROJECT_DIR" && "$PYTHON" -m alembic init alembic
     fi
 
-    # 生成迁移
-    log_info "生成迁移文件..."
-    cd "$PROJECT_DIR" && "$PYTHON" -m alembic revision --autogenerate -m "Initial migration"
-
     # 执行迁移
     log_info "执行数据库迁移..."
     cd "$PROJECT_DIR" && "$PYTHON" -m alembic upgrade head
@@ -206,6 +202,22 @@ cmd_migrate() {
     "$PYTHON" "$PROJECT_DIR/scripts/init_search.py" 2>/dev/null || log_warning "搜索索引初始化脚本未找到，跳过"
 
     log_success "迁移完成！"
+}
+
+cmd_makemigrations() {
+    log_info "生成数据库迁移文件..."
+
+    if [[ ! -d "$VENV_DIR" ]]; then
+        log_error "虚拟环境不存在，请先运行 ./manage.sh install"
+        exit 1
+    fi
+
+    check_services || exit 1
+    check_db_connection || exit 1
+
+    local migration_name="${1:-manual migration}"
+    cd "$PROJECT_DIR" && "$PYTHON" -m alembic revision --autogenerate -m "$migration_name"
+    log_success "迁移文件已生成: $migration_name"
 }
 
 cmd_start_bot() {
@@ -372,13 +384,14 @@ cmd_help() {
 
 命令:
   install          安装环境（创建虚拟环境、安装依赖）
-  migrate          执行数据库迁移和索引初始化
+  migrate          执行数据库迁移和索引初始化（仅 upgrade）
+  makemigrations   生成数据库迁移文件（autogenerate）
   start-bot        启动 Telegram Bot
   start-worker     启动任务队列 Worker
   gen-service      生成 systemd 服务配置文件
   health           检查依赖服务健康状态
   doctor           自动诊断常见问题 (Bot不响应、服务异常等)
-  test             运行测试套件
+  test             运行 pytest 测试套件
   help             显示此帮助信息
 
 示例:
@@ -428,9 +441,15 @@ main() {
         doctor)
             cmd_doctor
             ;;
+        makemigrations)
+            cmd_makemigrations "$@"
+            ;;
         test)
-            # 兼容性保留，虽然已被 doctor 覆盖
-            cmd_doctor
+            if [[ ! -d "$VENV_DIR" ]]; then
+                log_error "虚拟环境不存在，请先运行 ./manage.sh install"
+                exit 1
+            fi
+            cd "$PROJECT_DIR" && exec "$PYTHON" -m pytest
             ;;
         help|--help|-h)
             cmd_help

@@ -1,4 +1,4 @@
-from app.handlers.invite import build_invite_main
+from app.handlers.invite import build_invite_main, generate_invite_link, parse_invite_code
 
 
 class DummyUser:
@@ -23,3 +23,21 @@ def test_build_invite_main_escapes_and_encodes(monkeypatch):
     assert keyboard.inline_keyboard[0][0].url is not None
     assert "url=" in keyboard.inline_keyboard[0][0].url
     assert "%3A%2F%2F" in keyboard.inline_keyboard[0][0].url
+
+
+def test_parse_invite_code_valid(monkeypatch):
+    class DummySettings:
+        bot_username = "@bookbot"
+
+    monkeypatch.setattr("app.handlers.invite.get_settings", lambda: DummySettings())
+    link = generate_invite_link(123456)
+    code = link.split("start=", 1)[1]
+    assert parse_invite_code(code) == 123456
+
+
+def test_parse_invite_code_invalid(monkeypatch):
+    class DummySettings:
+        bot_username = "@bookbot"
+
+    monkeypatch.setattr("app.handlers.invite.get_settings", lambda: DummySettings())
+    assert parse_invite_code("INV123456ABCDEFGH") is None

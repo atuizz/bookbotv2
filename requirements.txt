@@ -1,7 +1,7 @@
 # 核心框架
-aiogram>=3.4.0,<4.0.0
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
+aiogram>=3.10.0,<3.11.0
+fastapi>=0.109.0,<0.116.0
+uvicorn[standard]>=0.27.0,<0.31.0
 
 # 异步数据库
 sqlalchemy[asyncio]>=2.0.25
@@ -16,9 +16,10 @@ redis>=5.0.0
 meilisearch>=0.28.0
 
 # 配置与环境
-pydantic>=2.5.0
-pydantic-settings>=2.1.0
+pydantic>=2.7.4,<2.9.0
+pydantic-settings>=2.1.0,<2.5.0
 python-dotenv>=1.0.0
+anyio>=4.7.0,<5.0.0
 
 # 工具库
 aiohttp>=3.9.0
@@ -26,4 +27,4 @@ aiofiles>=23.2.0
 httpx>=0.26.0
 cryptography>=42.0.0
 python-magic>=0.4.27
-chardet>=5.2.0
+chardet>=5.2.0,<6.0.0

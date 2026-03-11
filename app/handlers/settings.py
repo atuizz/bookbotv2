@@ -1,29 +1,26 @@
 # -*- coding: utf-8 -*-
 """
 搜书神器 V2 - 设置面板处理器
-处理 /settings 设置命令
+处理 /settings 设置命令（数据库持久化）
 """
 
-from typing import Dict
 from dataclasses import dataclass
 
-from aiogram import Router, F
+from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import (
-    Message,
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
+from sqlalchemy import select
+
+from app.core.database import get_session_factory
+from app.core.models import User, UserSetting
 
 settings_router = Router(name="settings")
 
 
 @dataclass
 class UserSettings:
-    """用户设置数据类"""
-    content_rating: str = "all"  # all, general, mature, adult
-    search_button_mode: str = "preview"  # preview, download
+    content_rating: str = "all"
+    search_button_mode: str = "preview"
     hide_personal_info: bool = False
     hide_upload_list: bool = False
     close_upload_feedback: bool = False
@@ -32,20 +29,57 @@ class UserSettings:
     close_book_update_notice: bool = False
 
 
-# 用户设置缓存 (实际项目中应使用数据库)
-_user_settings: Dict[int, UserSettings] = {}
+async def get_user_settings(user_id: int) -> UserSettings:
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        row = await session.scalar(select(UserSetting).where(UserSetting.user_id == user_id))
+        if not row:
+            return UserSettings()
+        return UserSettings(
+            content_rating=row.content_rating,
+            search_button_mode=row.search_button_mode,
+            hide_personal_info=bool(row.hide_personal_info),
+            hide_upload_list=bool(row.hide_upload_list),
+            close_upload_feedback=bool(row.close_upload_feedback),
+            close_invite_feedback=bool(row.close_invite_feedback),
+            close_download_feedback=bool(row.close_download_feedback),
+            close_book_update_notice=bool(row.close_book_update_notice),
+        )
 
 
-def get_user_settings(user_id: int) -> UserSettings:
-    """获取用户设置，如果不存在则创建默认设置"""
-    if user_id not in _user_settings:
-        _user_settings[user_id] = UserSettings()
-    return _user_settings[user_id]
+async def save_user_settings(user_id: int, settings: UserSettings):
+    session_factory = get_session_factory()
+    async with session_factory() as session:
+        user = await session.scalar(select(User).where(User.id == user_id))
+        if not user:
+            user = User(
+                id=user_id,
+                username=None,
+                first_name="Unknown",
+                last_name=None,
+                coins=0,
+                upload_count=0,
+                download_count=0,
+                search_count=0,
+            )
+            session.add(user)
+            await session.flush()
 
+        row = await session.scalar(select(UserSetting).where(UserSetting.user_id == user_id))
+        if not row:
+            row = UserSetting(user_id=user_id)
+            session.add(row)
+            await session.flush()
 
-def save_user_settings(user_id: int, settings: UserSettings):
-    """保存用户设置"""
-    _user_settings[user_id] = settings
+        row.content_rating = settings.content_rating
+        row.search_button_mode = settings.search_button_mode
+        row.hide_personal_info = settings.hide_personal_info
+        row.hide_upload_list = settings.hide_upload_list
+        row.close_upload_feedback = settings.close_upload_feedback
+        row.close_invite_feedback = settings.close_invite_feedback
+        row.close_download_feedback = settings.close_download_feedback
+        row.close_book_update_notice = settings.close_book_update_notice
+        await session.commit()
 
 
 def render_settings_text(settings: UserSettings) -> str:
@@ -65,47 +99,38 @@ def render_settings_text(settings: UserSettings) -> str:
 
 
 def build_settings_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="设置内容分级", callback_data="settings:content_rating"),
-            InlineKeyboardButton(text="搜索按钮模式", callback_data="settings:search_mode"),
-        ],
-        [
-            InlineKeyboardButton(text="添加屏蔽标签", callback_data="settings:block_add"),
-            InlineKeyboardButton(text="删除屏蔽标签", callback_data="settings:block_del"),
-        ],
-        [
-            InlineKeyboardButton(text="隐藏个人信息", callback_data="settings:toggle:hide_personal"),
-            InlineKeyboardButton(text="隐藏上传列表", callback_data="settings:toggle:hide_upload_list"),
-        ],
-        [
-            InlineKeyboardButton(text="关闭上传反馈消息", callback_data="settings:toggle:close_upload"),
-            InlineKeyboardButton(text="关闭邀请反馈消息", callback_data="settings:toggle:close_invite"),
-        ],
-        [
-            InlineKeyboardButton(text="关闭下载反馈消息", callback_data="settings:toggle:close_download"),
-        ],
-        [
-            InlineKeyboardButton(text="关闭书籍动态消息", callback_data="settings:toggle:close_book_update"),
-        ],
-    ])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="设置内容分级", callback_data="settings:content_rating"),
+                InlineKeyboardButton(text="搜索按钮模式", callback_data="settings:search_mode"),
+            ],
+            [
+                InlineKeyboardButton(text="隐藏个人信息", callback_data="settings:toggle:hide_personal"),
+                InlineKeyboardButton(text="隐藏上传列表", callback_data="settings:toggle:hide_upload_list"),
+            ],
+            [
+                InlineKeyboardButton(text="关闭上传反馈消息", callback_data="settings:toggle:close_upload"),
+                InlineKeyboardButton(text="关闭邀请反馈消息", callback_data="settings:toggle:close_invite"),
+            ],
+            [
+                InlineKeyboardButton(text="关闭下载反馈消息", callback_data="settings:toggle:close_download"),
+            ],
+            [
+                InlineKeyboardButton(text="关闭书籍动态消息", callback_data="settings:toggle:close_book_update"),
+            ],
+        ]
+    )
 
 
 @settings_router.message(Command("settings"))
 async def cmd_settings(message: Message):
-    """
-    处理 /settings 设置命令
-
-    显示用户设置面板主菜单
-    """
     user_id = message.from_user.id
-    settings = get_user_settings(user_id)
+    settings = await get_user_settings(user_id)
     await message.answer(render_settings_text(settings), reply_markup=build_settings_keyboard())
 
 
-# 辅助函数
 def get_content_rating_name(rating: str) -> str:
-    """获取内容分级名称"""
     names = {
         "all": "全部",
         "general": "全年龄",
@@ -116,7 +141,6 @@ def get_content_rating_name(rating: str) -> str:
 
 
 def get_search_mode_name(mode: str) -> str:
-    """获取搜索模式名称"""
     names = {
         "preview": "预览模式",
         "download": "下载模式",
@@ -124,42 +148,42 @@ def get_search_mode_name(mode: str) -> str:
     return names.get(mode, "预览模式")
 
 
-# 回调处理器
 @settings_router.callback_query(F.data.startswith("settings:"))
 async def on_settings_callback(callback: CallbackQuery):
-    """处理设置面板的回调"""
     user_id = callback.from_user.id
-    settings = get_user_settings(user_id)
+    settings = await get_user_settings(user_id)
     action = callback.data.replace("settings:", "")
 
     if action == "content_rating":
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="全部", callback_data="settings:rating:all"),
-                InlineKeyboardButton(text="全年龄", callback_data="settings:rating:general"),
-            ],
-            [
-                InlineKeyboardButton(text="青少年", callback_data="settings:rating:mature"),
-                InlineKeyboardButton(text="成人", callback_data="settings:rating:adult"),
-            ],
-            [
-                InlineKeyboardButton(text="◀️ 返回", callback_data="settings:back"),
-            ],
-        ])
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="全部", callback_data="settings:rating:all"),
+                    InlineKeyboardButton(text="全年龄", callback_data="settings:rating:general"),
+                ],
+                [
+                    InlineKeyboardButton(text="青少年", callback_data="settings:rating:mature"),
+                    InlineKeyboardButton(text="成人", callback_data="settings:rating:adult"),
+                ],
+                [
+                    InlineKeyboardButton(text="◀️ 返回", callback_data="settings:back"),
+                ],
+            ]
+        )
         await callback.message.edit_text("请选择内容分级：", reply_markup=keyboard)
         await callback.answer()
         return
 
     if action.startswith("rating:"):
         settings.content_rating = action.replace("rating:", "")
-        save_user_settings(user_id, settings)
+        await save_user_settings(user_id, settings)
         await callback.message.edit_text(render_settings_text(settings), reply_markup=build_settings_keyboard())
         await callback.answer()
         return
 
     if action == "search_mode":
         settings.search_button_mode = "download" if settings.search_button_mode == "preview" else "preview"
-        save_user_settings(user_id, settings)
+        await save_user_settings(user_id, settings)
         await callback.message.edit_text(render_settings_text(settings), reply_markup=build_settings_keyboard())
         await callback.answer()
         return
@@ -178,13 +202,9 @@ async def on_settings_callback(callback: CallbackQuery):
             settings.close_download_feedback = not settings.close_download_feedback
         elif key == "close_book_update":
             settings.close_book_update_notice = not settings.close_book_update_notice
-        save_user_settings(user_id, settings)
+        await save_user_settings(user_id, settings)
         await callback.message.edit_text(render_settings_text(settings), reply_markup=build_settings_keyboard())
         await callback.answer()
-        return
-
-    if action in {"block_add", "block_del"}:
-        await callback.answer("功能开发中...", show_alert=True)
         return
 
     if action == "back":
@@ -192,4 +212,4 @@ async def on_settings_callback(callback: CallbackQuery):
         await callback.answer()
         return
 
-    await callback.answer("⚠️ 未知操作", show_alert=True)
+    await callback.answer("未知操作", show_alert=True)
